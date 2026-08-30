@@ -2,10 +2,10 @@ import os
 import sqlite3
 import hashlib
 import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 # =========================
-# Configuration
+# CONFIG
 # =========================
 
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
@@ -14,38 +14,14 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "@mybuzzmy")
 
 DB_FILE = "mybuzz.db"
 
-# Number of articles to request
-MAX_ARTICLES = 10
+MAX_GNEWS_ARTICLES = 10
+MAX_TELEGRAM_POSTS = 5
+
+GNEWS_URL = "https://gnews.io/api/v4/search"
+
 
 # =========================
-# Categories
-# =========================
-
-CATEGORIES = {
-    "news": {
-        "emoji": "📰",
-        "query": "Malaysia latest news",
-    },
-    "viral": {
-        "emoji": "🔥",
-        "query": "Malaysia viral trending",
-    },
-    "entertainment": {
-        "emoji": "🎬",
-        "query": "Malaysia entertainment celebrity",
-    },
-    "food": {
-        "emoji": "🍜",
-        "query": "Malaysia food restaurant",
-    },
-    "tech": {
-        "emoji": "💻",
-        "query": "Malaysia technology gadget",
-    },
-}
-
-# =========================
-# Database
+# DATABASE
 # =========================
 
 def init_db():
@@ -53,8 +29,7 @@ def init_db():
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS articles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            article_hash TEXT UNIQUE,
+            article_hash TEXT PRIMARY KEY,
             title TEXT,
             url TEXT,
             category TEXT,
@@ -66,11 +41,11 @@ def init_db():
     conn.close()
 
 
-def article_exists(article_hash):
+def already_posted(article_hash):
     conn = sqlite3.connect(DB_FILE)
 
     cur = conn.execute(
-        "SELECT 1 FROM articles WHERE article_hash = ? LIMIT 1",
+        "SELECT article_hash FROM articles WHERE article_hash = ?",
         (article_hash,)
     )
 
@@ -84,44 +59,55 @@ def article_exists(article_hash):
 def save_article(article_hash, title, url, category):
     conn = sqlite3.connect(DB_FILE)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT OR IGNORE INTO articles
         (article_hash, title, url, category, created_at)
         VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            article_hash,
-            title,
-            url,
-            category,
-            datetime.now(timezone.utc).isoformat(),
-        )
-    )
+    """, (
+        article_hash,
+        title,
+        url,
+        category,
+        datetime.now(timezone.utc).isoformat()
+    ))
 
     conn.commit()
     conn.close()
 
 
 # =========================
-# GNews
+# GNEWS
 # =========================
 
-def get_news(query):
+def get_news():
+
     if not GNEWS_API_KEY:
         raise RuntimeError("GNEWS_API_KEY is missing")
 
-    url = "https://gnews.io/api/v4/search"
-
     params = {
-        "q": query,
+        "q": "Malaysia",
         "lang": "en",
         "country": "my",
-        "max": MAX_ARTICLES,
-        "apikey": GNEWS_API_KEY,
+        "max": MAX_GNEWS_ARTICLES,
+        "sortby": "publishedAt",
+        "apikey": GNEWS_API_KEY
     }
 
-    response = requests.get(url, params=params, timeout=30)
+    response = requests.get(
+        GNEWS_URL,
+        params=params,
+        timeout=30
+    )
+
+    if response.status_code == 429:
+        raise RuntimeError(
+            "GNews rate limit reached (429). Try again later."
+        )
+
+    if response.status_code == 403:
+        raise RuntimeError(
+            "GNews daily quota reached (403)."
+        )
 
     response.raise_for_status()
 
@@ -131,51 +117,92 @@ def get_news(query):
 
 
 # =========================
-# Text formatting
+# CATEGORY
 # =========================
 
-def clean_text(text):
-    if not text:
-        return ""
+def classify_article(article):
 
-    return " ".join(text.split())
+    text = (
+        article.get("title", "") + " " +
+        article.get("description", "")
+    ).lower()
 
+    entertainment_words = [
+        "celebrity",
+        "actor",
+        "actress",
+        "singer",
+        "concert",
+        "movie",
+        "film",
+        "music",
+        "k-pop",
+        "artist",
+        "entertainment"
+    ]
 
-def create_message(article, category):
-    title = clean_text(article.get("title", ""))
-    description = clean_text(article.get("description", ""))
-    url = article.get("url", "")
+    food_words = [
+        "food",
+        "restaurant",
+        "cafe",
+        "recipe",
+        "chef",
+        "dining",
+        "eat",
+        "menu",
+        "restaurant"
+    ]
 
-    emoji = CATEGORIES[category]["emoji"]
+    tech_words = [
+        "technology",
+        "tech",
+        "iphone",
+        "android",
+        "google",
+        "apple",
+        "samsung",
+        "ai",
+        "artificial intelligence",
+        "gadget",
+        "software"
+    ]
 
-    # Limit description length
-    if len(description) > 300:
-        description = description[:300].rstrip() + "..."
+    viral_words = [
+        "viral",
+        "trending",
+        "social media",
+        "tiktok",
+        "instagram",
+        "video",
+        "shocking",
+        "surprise"
+    ]
 
-    message = (
-        f"{emoji} <b>{category.upper()}</b>\n\n"
-        f"<b>{title}</b>\n\n"
-    )
+    if any(word in text for word in entertainment_words):
+        return "🎬 Entertainment"
 
-    if description:
-        message += f"{description}\n\n"
+    if any(word in text for word in food_words):
+        return "🍜 Food"
 
-    message += (
-        f"🔗 <b>อ่านเพิ่มเติม / Baca berita penuh</b>\n"
-        f"👉 <a href=\"{url}\">Read Full Story</a>\n\n"
-        f"🇲🇾 <b>MYBUZZ</b>"
-    )
+    if any(word in text for word in tech_words):
+        return "💻 Tech"
 
-    return message
+    if any(word in text for word in viral_words):
+        return "🔥 Viral"
+
+    return "📰 News"
 
 
 # =========================
-# Telegram
+# TELEGRAM
 # =========================
 
-def send_telegram(text):
+def send_telegram(message):
+
     if not TELEGRAM_BOT_TOKEN:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN is missing"
+        )
 
     url = (
         f"https://api.telegram.org/"
@@ -184,9 +211,9 @@ def send_telegram(text):
 
     data = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
+        "text": message,
         "parse_mode": "HTML",
-        "disable_web_page_preview": False,
+        "disable_web_page_preview": False
     }
 
     response = requests.post(
@@ -201,119 +228,160 @@ def send_telegram(text):
 
     if not result.get("ok"):
         raise RuntimeError(
-            f"Telegram error: {result}"
+            f"Telegram API error: {result}"
         )
-
-    return result
 
 
 # =========================
-# Main
+# MESSAGE
+# =========================
+
+def create_message(article, category):
+
+    title = article.get("title", "").strip()
+    description = (
+        article.get("description") or ""
+    ).strip()
+
+    url = article.get("url", "")
+    source = article.get("source", {}).get(
+        "name",
+        "News Source"
+    )
+
+    if len(description) > 280:
+        description = (
+            description[:280].rstrip() +
+            "..."
+        )
+
+    message = (
+        f"{category}\n\n"
+        f"<b>{title}</b>\n\n"
+    )
+
+    if description:
+        message += (
+            f"{description}\n\n"
+        )
+
+    message += (
+        f"📰 <i>{source}</i>\n\n"
+        f"🔗 "
+        f"<a href=\"{url}\">"
+        f"Read Full Story"
+        f"</a>\n\n"
+        f"🇲🇾 <b>MYBUZZ</b>"
+    )
+
+    return message
+
+
+# =========================
+# MAIN
 # =========================
 
 def main():
 
     print("================================")
-    print("MYBUZZ NEWS BOT")
+    print("MYBUZZ NEWS BOT V2")
     print("================================")
-
-    print("Starting bot...")
 
     init_db()
 
     if not GNEWS_API_KEY:
-        print("ERROR: GNEWS_API_KEY is missing")
+        print("ERROR: GNEWS_API_KEY missing")
         return
 
     if not TELEGRAM_BOT_TOKEN:
-        print("ERROR: TELEGRAM_BOT_TOKEN is missing")
+        print("ERROR: TELEGRAM_BOT_TOKEN missing")
         return
 
     print("GNews API: OK")
-    print(f"Telegram Channel: {TELEGRAM_CHAT_ID}")
+    print(f"Telegram: {TELEGRAM_CHAT_ID}")
 
-    total_sent = 0
+    print("")
+    print("Fetching Malaysia news...")
 
-    # Run all categories
-    for category, config in CATEGORIES.items():
+    try:
+        articles = get_news()
 
-        print("")
-        print(f"Fetching {category}...")
+    except Exception as e:
+        print(f"GNews error: {e}")
+        return
 
-        try:
-            articles = get_news(config["query"])
+    print(
+        f"Found {len(articles)} articles"
+    )
 
-        except Exception as e:
-            print(
-                f"Failed to fetch {category}: {e}"
-            )
+    sent = 0
+
+    for article in articles:
+
+        if sent >= MAX_TELEGRAM_POSTS:
+            break
+
+        title = article.get(
+            "title",
+            ""
+        ).strip()
+
+        url = article.get(
+            "url",
+            ""
+        ).strip()
+
+        if not title or not url:
             continue
 
-        print(
-            f"Found {len(articles)} articles"
-        )
+        article_hash = hashlib.sha256(
+            url.encode("utf-8")
+        ).hexdigest()
 
-        # Only send first 2 new articles
-        sent_for_category = 0
+        if already_posted(article_hash):
 
-        for article in articles:
-
-            if sent_for_category >= 2:
-                break
-
-            title = clean_text(
-                article.get("title", "")
+            print(
+                f"Already posted: {title}"
             )
 
-            url = article.get("url", "")
+            continue
 
-            if not title or not url:
-                continue
+        category = classify_article(
+            article
+        )
 
-            # Create unique hash
-            article_hash = hashlib.sha256(
-                url.encode("utf-8")
-            ).hexdigest()
+        message = create_message(
+            article,
+            category
+        )
 
-            if article_exists(article_hash):
-                print(
-                    f"Already posted: {title}"
-                )
-                continue
+        try:
 
-            message = create_message(
-                article,
+            send_telegram(message)
+
+            save_article(
+                article_hash,
+                title,
+                url,
                 category
             )
 
-            try:
+            sent += 1
 
-                send_telegram(message)
+            print(
+                f"POSTED [{category}] {title}"
+            )
 
-                save_article(
-                    article_hash,
-                    title,
-                    url,
-                    category
-                )
+        except Exception as e:
 
-                total_sent += 1
-                sent_for_category += 1
-
-                print(
-                    f"Posted: {title}"
-                )
-
-            except Exception as e:
-
-                print(
-                    f"Telegram error: {e}"
-                )
+            print(
+                f"Telegram error: {e}"
+            )
 
     print("")
     print("================================")
     print(
-        f"Finished. Sent {total_sent} articles."
+        f"Finished. Sent {sent} articles."
     )
     print("================================")
 

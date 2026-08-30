@@ -26,4 +26,5 @@ jobs:
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python mybuzz_news_bot.py

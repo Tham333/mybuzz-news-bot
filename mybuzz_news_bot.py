@@ -1,155 +1,322 @@
-import os, re, sqlite3, hashlib, html, json
+import os
+import sqlite3
+import hashlib
+import requests
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
-GNEWS_URL = "https://gnews.io/api/v4/search"
-TELEGRAM_URL = "https://api.telegram.org/bot{token}/{method}"
-DB_PATH = os.getenv("MYBUZZ_DB", "mybuzz.db")
+# =========================
+# Configuration
+# =========================
 
-TARGETS = {"news": .40, "viral": .25, "entertainment": .15, "food": .10, "tech": .10}
-QUERIES = {
-    "news": ['Malaysia', 'Malaysia government', 'Malaysia economy', 'Malaysia crime'],
-    "viral": ['Malaysia viral', 'Malaysia trending', 'Malaysia netizens', 'Malaysia tular'],
-    "entertainment": ['Malaysia entertainment', 'Malaysia celebrity', 'Malaysia K-pop'],
-    "food": ['Malaysia food', 'Malaysia restaurant', 'Malaysia cafe', 'Malaysia dessert'],
-    "tech": ['Malaysia technology', 'Malaysia smartphone', 'Malaysia gadget', 'Malaysia AI'],
+GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "@mybuzzmy")
+
+DB_FILE = "mybuzz.db"
+
+# Number of articles to request
+MAX_ARTICLES = 10
+
+# =========================
+# Categories
+# =========================
+
+CATEGORIES = {
+    "news": {
+        "emoji": "📰",
+        "query": "Malaysia latest news",
+    },
+    "viral": {
+        "emoji": "🔥",
+        "query": "Malaysia viral trending",
+    },
+    "entertainment": {
+        "emoji": "🎬",
+        "query": "Malaysia entertainment celebrity",
+    },
+    "food": {
+        "emoji": "🍜",
+        "query": "Malaysia food restaurant",
+    },
+    "tech": {
+        "emoji": "💻",
+        "query": "Malaysia technology gadget",
+    },
 }
-KEYWORDS = {
-    "viral": ["viral", "trending", "netizen", "tular", "sensasi", "bizarre"],
-    "entertainment": ["entertainment", "celebrity", "artist", "actor", "actress", "k-pop", "concert", "movie", "music"],
-    "food": ["food", "restaurant", "cafe", "donut", "dessert", "chef", "dining"],
-    "tech": ["technology", "tech", "gadget", "iphone", "android", "ai", "artificial intelligence", "smartphone"],
-}
-LABELS = {"news":"📰 NEWS", "viral":"🔥 VIRAL", "entertainment":"🎬 ENTERTAINMENT", "food":"🍜 FOOD / LIFESTYLE", "tech":"📱 TECH / GADGET"}
+
+# =========================
+# Database
+# =========================
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_hash TEXT UNIQUE,
+            title TEXT,
+            url TEXT,
+            category TEXT,
+            created_at TEXT
+        )
+    """)
+
+    conn.commit()
+    conn.close()
 
 
-def load_dotenv():
-    path = ".env"
-    if not os.path.exists(path): return
-    for line in open(path, encoding="utf-8"):
-        line=line.strip()
-        if not line or line.startswith("#") or "=" not in line: continue
-        k,v=line.split("=",1); v=v.strip().strip('"').strip("'")
-        os.environ.setdefault(k.strip(), v)
+def article_exists(article_hash):
+    conn = sqlite3.connect(DB_FILE)
+
+    cur = conn.execute(
+        "SELECT 1 FROM articles WHERE article_hash = ? LIMIT 1",
+        (article_hash,)
+    )
+
+    result = cur.fetchone()
+
+    conn.close()
+
+    return result is not None
 
 
-def db():
-    c=sqlite3.connect(DB_PATH)
-    c.execute("CREATE TABLE IF NOT EXISTS seen(article_key TEXT PRIMARY KEY,url TEXT,title TEXT,published_at TEXT,category TEXT,created_at TEXT)")
-    c.commit(); return c
+def save_article(article_hash, title, url, category):
+    conn = sqlite3.connect(DB_FILE)
+
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO articles
+        (article_hash, title, url, category, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            article_hash,
+            title,
+            url,
+            category,
+            datetime.now(timezone.utc).isoformat(),
+        )
+    )
+
+    conn.commit()
+    conn.close()
 
 
-def get_json(url, params=None, method="GET", data=None):
-    if params: url += "?" + urlencode(params)
-    body = None if data is None else json.dumps(data).encode()
-    req=Request(url, data=body, headers={"User-Agent":"MYBUZZ-NewsBot/1.1","Content-Type":"application/json"})
-    with urlopen(req, timeout=25) as r: return json.loads(r.read().decode("utf-8"))
+# =========================
+# GNews
+# =========================
 
+def get_news(query):
+    if not GNEWS_API_KEY:
+        raise RuntimeError("GNEWS_API_KEY is missing")
 
-def fetch_category(key, category, hours=24, max_each=10):
-    since=(datetime.now(timezone.utc)-timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    out=[]
-    for q in QUERIES[category]:
-        try:
-            data=get_json(GNEWS_URL,{"q":q,"lang":"en","country":"my","max":max_each,"sortby":"publishedAt","from":since,"apikey":key})
-            for a in data.get("articles",[]): a["_requested_category"]=category; out.append(a)
-        except Exception as e: print(f"[WARN] {category}: {e}")
-    return out
+    url = "https://gnews.io/api/v4/search"
 
-
-def normalize_title(s): return re.sub(r"[^a-z0-9\u00C0-\uFFFF ]","",re.sub(r"\s+"," ",(s or "").lower()).strip())
-def article_key(a): return hashlib.sha256(((a.get("url") or "").strip() or normalize_title(a.get("title"))).encode()).hexdigest()
-
-
-def category(a):
-    text=((a.get("title") or "")+" "+(a.get("description") or "")).lower(); scores={k:0 for k in TARGETS}; scores[a.get("_requested_category","news")]+=2
-    for cat,words in KEYWORDS.items(): scores[cat]+=sum(w in text for w in words)
-    return max(scores,key=scores.get)
-
-
-def select_balanced(articles,total):
-    quotas={k:round(total*v) for k,v in TARGETS.items()}
-    while sum(quotas.values())<total: quotas["news"]+=1
-    while sum(quotas.values())>total: quotas["news"]-=1
-    groups={k:[] for k in TARGETS}
-    for a in articles: a["_category"]=category(a); groups[a["_category"]].append(a)
-    for g in groups.values(): g.sort(key=lambda x:x.get("publishedAt","") or "", reverse=True)
-    chosen=[]; used=set()
-    for cat,q in quotas.items():
-        for a in groups[cat]:
-            k=article_key(a)
-            if k not in used and sum(x["_category"]==cat for x in chosen)<q: chosen.append(a); used.add(k)
-    rest=[a for a in articles if article_key(a) not in used]; rest.sort(key=lambda x:x.get("publishedAt","") or "",reverse=True)
-    return (chosen+rest)[:total]
-
-
-def simple_bilingual(a):
-    # Safe fallback: keep the source description rather than inventing facts.
-    title=a.get("title","").strip(); desc=(a.get("description") or "").strip(); source=(a.get("source") or {}).get("name","Source"); url=a.get("url","")
-    return (f"{LABELS[a['_category']]}｜{title}\n\n🇨🇳 {desc}\n\n🇲🇾 {desc}\n\n"
-            f"👉 点击阅读完整新闻\n👉 Klik untuk baca berita penuh\n\n🔗 {source}\n{url}")
-
-
-def ai_bilingual(a):
-    """Optional OpenAI-compatible translation/summarisation. Requires OPENAI_API_KEY and OPENAI_MODEL."""
-    key=os.getenv("OPENAI_API_KEY")
-    if not key: return simple_bilingual(a)
-    endpoint=os.getenv("OPENAI_BASE_URL","https://api.openai.com/v1")+"/chat/completions"
-    model=os.getenv("OPENAI_MODEL","gpt-4o-mini")
-    title=a.get("title",""); desc=a.get("description",""); source=(a.get("source") or {}).get("name","Source"); url=a.get("url","")
-    prompt=("You are MYBUZZ Malaysia news editor. Based ONLY on the supplied title and description, "
-            "write a concise Chinese summary and a concise Bahasa Melayu summary. Do not add facts. "
-            "Return JSON with keys zh and ms.\nTITLE: "+title+"\nDESCRIPTION: "+desc)
-    try:
-        data=get_json(endpoint, data={"model":model,"temperature":0.2,"messages":[{"role":"system","content":"Return valid JSON only."},{"role":"user","content":prompt}]})
-        content=data["choices"][0]["message"]["content"].strip(); obj=json.loads(content)
-        return (f"{LABELS[a['_category']]}｜{title}\n\n🇨🇳 {obj.get('zh',desc)}\n\n🇲🇾 {obj.get('ms',desc)}\n\n"
-                f"👉 点击阅读完整新闻\n👉 Klik untuk baca berita penuh\n\n🔗 {source}\n{url}")
-    except Exception as e:
-        print(f"[WARN] AI failed, using fallback: {e}"); return simple_bilingual(a)
-
-
-def telegram_send(token, chat_id, text, dry_run=False):
-    if dry_run: print("\n[DRY RUN] Telegram message:\n"+text); return True
-    try:
-r = get_json(
-    TELEGRAM_URL.format(token=token, method="sendMessage"),
-    data={
-        "chat_id": chat_id,
-        "text": text,
-        "disable_web_page_preview": False
+    params = {
+        "q": query,
+        "lang": "en",
+        "country": "my",
+        "max": MAX_ARTICLES,
+        "apikey": GNEWS_API_KEY,
     }
-)
-        return bool(r.get("ok"))
-    except Exception as e: print("[ERROR] Telegram:",e); return False
+
+    response = requests.get(url, params=params, timeout=30)
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    return data.get("articles", [])
 
 
-def mark_seen(c,a): c.execute("INSERT OR IGNORE INTO seen VALUES (?,?,?,?,?,?)",(article_key(a),a.get("url",""),a.get("title",""),a.get("publishedAt",""),a.get("_category","news"),datetime.now(timezone.utc).isoformat()))
+# =========================
+# Text formatting
+# =========================
 
+def clean_text(text):
+    if not text:
+        return ""
+
+    return " ".join(text.split())
+
+
+def create_message(article, category):
+    title = clean_text(article.get("title", ""))
+    description = clean_text(article.get("description", ""))
+    url = article.get("url", "")
+
+    emoji = CATEGORIES[category]["emoji"]
+
+    # Limit description length
+    if len(description) > 300:
+        description = description[:300].rstrip() + "..."
+
+    message = (
+        f"{emoji} <b>{category.upper()}</b>\n\n"
+        f"<b>{title}</b>\n\n"
+    )
+
+    if description:
+        message += f"{description}\n\n"
+
+    message += (
+        f"🔗 <b>อ่านเพิ่มเติม / Baca berita penuh</b>\n"
+        f"👉 <a href=\"{url}\">Read Full Story</a>\n\n"
+        f"🇲🇾 <b>MYBUZZ</b>"
+    )
+
+    return message
+
+
+# =========================
+# Telegram
+# =========================
+
+def send_telegram(text):
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    )
+
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False,
+    }
+
+    response = requests.post(
+        url,
+        data=data,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    result = response.json()
+
+    if not result.get("ok"):
+        raise RuntimeError(
+            f"Telegram error: {result}"
+        )
+
+    return result
+
+
+# =========================
+# Main
+# =========================
 
 def main():
-    load_dotenv()
-    key=os.getenv("GNEWS_API_KEY")
-    if not key: raise SystemExit("Missing GNEWS_API_KEY in .env")
-    publish_count=int(os.getenv("MYBUZZ_PUBLISH_COUNT","10")); hours=int(os.getenv("MYBUZZ_LOOKBACK_HOURS","24"))
-    send=os.getenv("MYBUZZ_TELEGRAM_SEND","false").lower()=="true"
-    dry=os.getenv("MYBUZZ_DRY_RUN","true").lower()=="true"
-    token=os.getenv("TELEGRAM_BOT_TOKEN"); chat=os.getenv("TELEGRAM_CHAT_ID")
-    all_articles=[]
-    for cat in QUERIES: all_articles += fetch_category(key,cat,hours)
-    unique={article_key(a):a for a in all_articles}
-    c=db(); seen={r[0] for r in c.execute("SELECT article_key FROM seen")}
-    fresh=[a for k,a in unique.items() if k not in seen]
-    selected=select_balanced(fresh,publish_count)
-    print(f"MYBUZZ V1.1 | candidates={len(unique)} fresh={len(fresh)} selected={len(selected)}")
-    for a in selected:
-        text=ai_bilingual(a)
-        if send:
-            if not token or not chat: print("[WARN] Telegram enabled but token/chat_id missing; skipping")
-            elif telegram_send(token,chat,text,dry): mark_seen(c,a)
-        else:
-            print("="*70); print(text); mark_seen(c,a)
-    c.commit(); c.close()
 
-if __name__=="__main__": main()
+    print("================================")
+    print("MYBUZZ NEWS BOT")
+    print("================================")
+
+    print("Starting bot...")
+
+    init_db()
+
+    if not GNEWS_API_KEY:
+        print("ERROR: GNEWS_API_KEY is missing")
+        return
+
+    if not TELEGRAM_BOT_TOKEN:
+        print("ERROR: TELEGRAM_BOT_TOKEN is missing")
+        return
+
+    print("GNews API: OK")
+    print(f"Telegram Channel: {TELEGRAM_CHAT_ID}")
+
+    total_sent = 0
+
+    # Run all categories
+    for category, config in CATEGORIES.items():
+
+        print("")
+        print(f"Fetching {category}...")
+
+        try:
+            articles = get_news(config["query"])
+
+        except Exception as e:
+            print(
+                f"Failed to fetch {category}: {e}"
+            )
+            continue
+
+        print(
+            f"Found {len(articles)} articles"
+        )
+
+        # Only send first 2 new articles
+        sent_for_category = 0
+
+        for article in articles:
+
+            if sent_for_category >= 2:
+                break
+
+            title = clean_text(
+                article.get("title", "")
+            )
+
+            url = article.get("url", "")
+
+            if not title or not url:
+                continue
+
+            # Create unique hash
+            article_hash = hashlib.sha256(
+                url.encode("utf-8")
+            ).hexdigest()
+
+            if article_exists(article_hash):
+                print(
+                    f"Already posted: {title}"
+                )
+                continue
+
+            message = create_message(
+                article,
+                category
+            )
+
+            try:
+
+                send_telegram(message)
+
+                save_article(
+                    article_hash,
+                    title,
+                    url,
+                    category
+                )
+
+                total_sent += 1
+                sent_for_category += 1
+
+                print(
+                    f"Posted: {title}"
+                )
+
+            except Exception as e:
+
+                print(
+                    f"Telegram error: {e}"
+                )
+
+    print("")
+    print("================================")
+    print(
+        f"Finished. Sent {total_sent} articles."
+    )
+    print("================================")
+
+
+if __name__ == "__main__":
+    main()

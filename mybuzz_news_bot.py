@@ -4,29 +4,27 @@ import hashlib
 import requests
 import html
 import json
-import time
 
 from datetime import datetime, timezone
 from google import genai
 
 
 # =========================================================
-# CONFIG
+# MYBUZZ NEWS BOT
 # =========================================================
 
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv(
-    "TELEGRAM_CHAT_ID",
-    "@mybuzzmy"
-)
-
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "@mybuzzmy")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 DB_FILE = "mybuzz.db"
 
-MAX_GNEWS_ARTICLES = 10
+# 每次运行最多发 1 条
 MAX_POSTS = 1
+
+# GNews 每次最多抓 10 条
+MAX_GNEWS_ARTICLES = 10
 
 GNEWS_URL = "https://gnews.io/api/v4/search"
 
@@ -73,11 +71,7 @@ def already_posted(article_hash):
     return result is not None
 
 
-def save_article(
-    article_hash,
-    title,
-    url
-):
+def save_article(article_hash, title, url):
 
     conn = sqlite3.connect(DB_FILE)
 
@@ -96,9 +90,7 @@ def save_article(
             article_hash,
             title,
             url,
-            datetime.now(
-                timezone.utc
-            ).isoformat()
+            datetime.now(timezone.utc).isoformat()
         )
     )
 
@@ -107,7 +99,7 @@ def save_article(
 
 
 # =========================================================
-# CLEAN TEXT
+# TEXT CLEAN
 # =========================================================
 
 def clean_text(text):
@@ -115,9 +107,7 @@ def clean_text(text):
     if not text:
         return ""
 
-    text = html.unescape(
-        str(text)
-    )
+    text = html.unescape(str(text))
 
     text = " ".join(
         text.split()
@@ -153,13 +143,11 @@ def get_news():
     )
 
     if response.status_code == 429:
-
         raise RuntimeError(
             "GNews rate limit reached (429)"
         )
 
     if response.status_code == 403:
-
         raise RuntimeError(
             "GNews quota reached (403)"
         )
@@ -168,26 +156,21 @@ def get_news():
 
     data = response.json()
 
-    return data.get(
-        "articles",
-        []
-    )
+    return data.get("articles", [])
 
 
 # =========================================================
 # CATEGORY
 # =========================================================
 
-def get_category(
-    title,
-    description
-):
+def get_category(title, description):
 
     text = (
         f"{title} {description}"
     ).lower()
 
-    food_words = [
+    # Food
+    if any(word in text for word in [
         "food",
         "restaurant",
         "cafe",
@@ -198,9 +181,11 @@ def get_category(
         "dessert",
         "bakery",
         "cooking"
-    ]
+    ]):
+        return "🍩"
 
-    entertainment_words = [
+    # Entertainment
+    if any(word in text for word in [
         "celebrity",
         "actor",
         "actress",
@@ -211,9 +196,11 @@ def get_category(
         "music",
         "entertainment",
         "k-pop"
-    ]
+    ]):
+        return "🎬"
 
-    tech_words = [
+    # Tech
+    if any(word in text for word in [
         "technology",
         "tech",
         "iphone",
@@ -222,56 +209,32 @@ def get_category(
         "samsung",
         "google",
         "artificial intelligence",
-        "ai",
+        " ai ",
         "gadget",
         "software"
-    ]
+    ]):
+        return "💻"
 
-    viral_words = [
+    # Viral
+    if any(word in text for word in [
         "viral",
         "trending",
         "tiktok",
         "instagram",
         "social media",
-        "shocking",
-        "video"
-    ]
-
-    if any(
-        word in text
-        for word in food_words
-    ):
-        return "🍩"
-
-    if any(
-        word in text
-        for word in entertainment_words
-    ):
-        return "🎬"
-
-    if any(
-        word in text
-        for word in tech_words
-    ):
-        return "💻"
-
-    if any(
-        word in text
-        for word in viral_words
-    ):
+        "shocking"
+    ]):
         return "🔥"
 
+    # General Malaysia
     return "🇲🇾"
 
 
 # =========================================================
-# GEMINI TRANSLATION
+# GEMINI
 # =========================================================
 
-def translate_news(
-    title,
-    description
-):
+def translate_news(title, description):
 
     if not GEMINI_API_KEY:
 
@@ -284,31 +247,38 @@ def translate_news(
     )
 
     prompt = f"""
-You are the professional editor of a Malaysian news Telegram channel called MYBUZZ.
+You are the editor of a Malaysian news Telegram channel called MYBUZZ.
 
-Rewrite this English news into natural Malaysian Chinese and Bahasa Melayu.
+Rewrite the following English news into TWO languages:
 
-Rules:
+1. Malaysian Chinese
+2. Bahasa Melayu Malaysia
 
-1. Do not invent information.
-2. Keep names, locations, dates and numbers accurate.
-3. Keep the meaning of the original article.
-4. Make the Chinese title short, natural and attractive.
-5. Make the Malay title natural for Malaysian readers.
-6. Chinese should be easy-to-read Malaysian Chinese.
-7. Malay should be natural Bahasa Melayu Malaysia.
-8. Keep each summary short.
-9. Do not mention that you are translating.
-10. Do not use Markdown.
-11. Return ONLY valid JSON.
+IMPORTANT RULES:
 
-JSON format:
+- Do not invent facts.
+- Do not add information that is not in the original.
+- Keep names accurate.
+- Keep locations accurate.
+- Keep dates accurate.
+- Keep numbers accurate.
+- Make the Chinese title short and attractive.
+- Make the Malay title natural.
+- Make both summaries short.
+- Use natural Malaysian Chinese.
+- Use natural Malaysian Bahasa Melayu.
+- Do not mention AI.
+- Do not mention translation.
+- Do not use Markdown.
+- Return ONLY valid JSON.
+
+Required format:
 
 {{
-  "chinese_title": "中文标题",
-  "chinese_summary": "中文摘要",
-  "malay_title": "Tajuk Bahasa Melayu",
-  "malay_summary": "Ringkasan Bahasa Melayu"
+    "chinese_title": "...",
+    "chinese_summary": "...",
+    "malay_title": "...",
+    "malay_summary": "..."
 }}
 
 English title:
@@ -318,21 +288,28 @@ English description:
 {description}
 """
 
-    # Try Gemini
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=prompt
     )
 
-    if not response or not response.text:
+    if not response:
 
         raise RuntimeError(
-            "Gemini returned empty response"
+            "Gemini returned no response"
         )
 
-    text = response.text.strip()
+    text = response.text
 
-    # Remove markdown code fences
+    if not text:
+
+        raise RuntimeError(
+            "Gemini returned empty text"
+        )
+
+    text = text.strip()
+
+    # Remove Markdown code block if Gemini adds it
     if text.startswith("```"):
 
         text = text.replace(
@@ -347,41 +324,37 @@ English description:
 
         text = text.strip()
 
+    # Try JSON directly
     try:
 
-        result = json.loads(text)
+        return json.loads(text)
 
     except json.JSONDecodeError:
 
-        # Try extracting JSON object
-        start = text.find("{")
-        end = text.rfind("}")
+        pass
 
-        if start == -1 or end == -1:
+    # Try extracting JSON
+    start = text.find("{")
+    end = text.rfind("}")
 
-            raise RuntimeError(
-                "Gemini returned invalid JSON"
-            )
+    if start == -1 or end == -1:
 
-        json_text = text[
-            start:end + 1
-        ]
-
-        result = json.loads(
-            json_text
+        raise RuntimeError(
+            "Gemini returned invalid JSON"
         )
 
-    return result
+    json_text = text[
+        start:end + 1
+    ]
+
+    return json.loads(json_text)
 
 
 # =========================================================
 # TELEGRAM
 # =========================================================
 
-def send_photo(
-    image_url,
-    caption
-):
+def send_photo(image_url, caption):
 
     if not TELEGRAM_BOT_TOKEN:
 
@@ -419,33 +392,21 @@ def send_photo(
 
 
 # =========================================================
-# TELEGRAM CAPTION
+# TELEGRAM MESSAGE
 # =========================================================
 
-def create_caption(
-    article,
-    translation
-):
+def create_caption(article, translation):
 
     title = clean_text(
-        article.get(
-            "title",
-            ""
-        )
+        article.get("title", "")
     )
 
     description = clean_text(
-        article.get(
-            "description",
-            ""
-        )
+        article.get("description", "")
     )
 
     url = clean_text(
-        article.get(
-            "url",
-            ""
-        )
+        article.get("url", "")
     )
 
     emoji = get_category(
@@ -481,7 +442,7 @@ def create_caption(
         )
     )
 
-    # Limit text
+    # Limit summary length
     if len(chinese_summary) > 220:
 
         chinese_summary = (
@@ -522,7 +483,7 @@ def create_caption(
         f'👉 <a href="{safe_url}">'
         f"点击阅读完整新闻"
         f"</a>"
-        f"\n"
+        f"\n\n"
 
         f'👉 <a href="{safe_url}">'
         f"Klik untuk baca berita penuh"
@@ -538,23 +499,15 @@ def create_caption(
 
 def main():
 
-    print(
-        "================================"
-    )
-
-    print(
-        "MYBUZZ NEWS BOT V4.1"
-    )
-
-    print(
-        "================================"
-    )
+    print("================================")
+    print("MYBUZZ NEWS BOT V5")
+    print("================================")
 
     init_db()
 
-    # ---------------------------------
-    # Check API keys
-    # ---------------------------------
+    # -----------------------------------------
+    # Check API
+    # -----------------------------------------
 
     if not GNEWS_API_KEY:
 
@@ -580,23 +533,17 @@ def main():
 
         return
 
-    print(
-        "GNews API: OK"
-    )
-
-    print(
-        "Gemini API: OK"
-    )
-
+    print("GNews API: OK")
+    print("Gemini API: OK")
     print(
         f"Telegram: {TELEGRAM_CHAT_ID}"
     )
 
     print("")
 
-    # ---------------------------------
-    # Get news
-    # ---------------------------------
+    # -----------------------------------------
+    # Fetch news
+    # -----------------------------------------
 
     print(
         "Fetching Malaysia news..."
@@ -626,11 +573,12 @@ def main():
 
         return
 
-    # ---------------------------------
-    # Find suitable article
-    # ---------------------------------
+    # -----------------------------------------
+    # Select article
+    # -----------------------------------------
 
-    selected = None
+    selected_article = None
+    selected_hash = None
 
     for article in articles:
 
@@ -655,7 +603,11 @@ def main():
             )
         )
 
-        if not title or not url:
+        if not title:
+
+            continue
+
+        if not url:
 
             continue
 
@@ -681,14 +633,12 @@ def main():
 
             continue
 
-        selected = (
-            article,
-            article_hash
-        )
+        selected_article = article
+        selected_hash = article_hash
 
         break
 
-    if not selected:
+    if not selected_article:
 
         print(
             "No suitable new article found."
@@ -696,7 +646,7 @@ def main():
 
         return
 
-    article, article_hash = selected
+    article = selected_article
 
     title = clean_text(
         article.get(
@@ -719,14 +669,21 @@ def main():
         )
     )
 
+    article_url = clean_text(
+        article.get(
+            "url",
+            ""
+        )
+    )
+
     print("")
     print(
         f"Selected: {title}"
     )
 
-    # ---------------------------------
+    # -----------------------------------------
     # Gemini
-    # ---------------------------------
+    # -----------------------------------------
 
     print(
         "Translating with Gemini..."
@@ -751,22 +708,22 @@ def main():
 
         return
 
-    # ---------------------------------
-    # Create Telegram message
-    # ---------------------------------
+    # -----------------------------------------
+    # Create message
+    # -----------------------------------------
 
     caption = create_caption(
         article,
         translation
     )
 
+    # -----------------------------------------
+    # Send Telegram
+    # -----------------------------------------
+
     print(
         "Sending Telegram message..."
     )
-
-    # ---------------------------------
-    # Send
-    # ---------------------------------
 
     try:
 
@@ -776,12 +733,9 @@ def main():
         )
 
         save_article(
-            article_hash,
+            selected_hash,
             title,
-            article.get(
-                "url",
-                ""
-            )
+            article_url
         )
 
         print(
@@ -797,18 +751,14 @@ def main():
         return
 
     print("")
-    print(
-        "================================"
-    )
+    print("================================")
+    print("Finished. Sent 1 article.")
+    print("================================")
 
-    print(
-        "Finished. Sent 1 article."
-    )
 
-    print(
-        "================================"
-    )
-
+# =========================================================
+# START
+# =========================================================
 
 if __name__ == "__main__":
 

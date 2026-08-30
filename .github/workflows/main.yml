@@ -1,31 +1,11 @@
-name: MYBUZZ News Bot
+name: MYBUZZ Test
 
 on:
-  schedule:
-    - cron: "0 */2 * * *"
   workflow_dispatch:
 
 jobs:
-  run-bot:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run MYBUZZ News Bot
-        env:
-          GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          MYBUZZ_TELEGRAM_SEND: "true"
-          MYBUZZ_DRY_RUN: "false"
-        run: python mybuzz_news_bot.py
+      - name: Test
+        run: echo "MYBUZZ ACTIONS WORKING"

@@ -113,7 +113,14 @@ def ai_bilingual(a):
 def telegram_send(token, chat_id, text, dry_run=False):
     if dry_run: print("\n[DRY RUN] Telegram message:\n"+text); return True
     try:
-        r=get_json(TELEGRAM_URL.format(token=token,"method":"sendMessage"),data={"chat_id":chat_id,"text":text,"disable_web_page_preview":False})
+r = get_json(
+    TELEGRAM_URL.format(token=token, method="sendMessage"),
+    data={
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": False
+    }
+)
         return bool(r.get("ok"))
     except Exception as e: print("[ERROR] Telegram:",e); return False
 

@@ -3,33 +3,39 @@ import sqlite3
 import hashlib
 import requests
 import html
-import re
+import json
 from datetime import datetime, timezone
 
-# =========================
+from google import genai
+
+
+# ==========================================
 # MYBUZZ CONFIG
-# =========================
+# ==========================================
 
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "@mybuzzmy")
+TELEGRAM_CHAT_ID = os.getenv(
+    "TELEGRAM_CHAT_ID",
+    "@mybuzzmy"
+)
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 DB_FILE = "mybuzz.db"
 
-# 每次运行最多发送 1 条
+MAX_GNEWS_ARTICLES = 10
 MAX_POSTS = 1
-
-# GNews 每次只请求一次
-GNEWS_MAX_ARTICLES = 10
 
 GNEWS_URL = "https://gnews.io/api/v4/search"
 
 
-# =========================
+# ==========================================
 # DATABASE
-# =========================
+# ==========================================
 
 def init_db():
+
     conn = sqlite3.connect(DB_FILE)
 
     conn.execute("""
@@ -46,10 +52,16 @@ def init_db():
 
 
 def already_posted(article_hash):
+
     conn = sqlite3.connect(DB_FILE)
 
     cur = conn.execute(
-        "SELECT 1 FROM articles WHERE article_hash = ? LIMIT 1",
+        """
+        SELECT 1
+        FROM articles
+        WHERE article_hash = ?
+        LIMIT 1
+        """,
         (article_hash,)
     )
 
@@ -61,41 +73,44 @@ def already_posted(article_hash):
 
 
 def save_article(article_hash, title, url):
+
     conn = sqlite3.connect(DB_FILE)
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT OR IGNORE INTO articles
         (article_hash, title, url, created_at)
         VALUES (?, ?, ?, ?)
-    """, (
-        article_hash,
-        title,
-        url,
-        datetime.now(timezone.utc).isoformat()
-    ))
+        """,
+        (
+            article_hash,
+            title,
+            url,
+            datetime.now(timezone.utc).isoformat()
+        )
+    )
 
     conn.commit()
     conn.close()
 
 
-# =========================
+# ==========================================
 # CLEAN TEXT
-# =========================
+# ==========================================
 
 def clean_text(text):
+
     if not text:
         return ""
 
-    text = html.unescape(text)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = " ".join(text.split())
-
-    return text.strip()
+    return " ".join(
+        html.unescape(str(text)).split()
+    ).strip()
 
 
-# =========================
+# ==========================================
 # GNEWS
-# =========================
+# ==========================================
 
 def get_news():
 
@@ -108,7 +123,7 @@ def get_news():
         "q": "Malaysia",
         "lang": "en",
         "country": "my",
-        "max": GNEWS_MAX_ARTICLES,
+        "max": MAX_GNEWS_ARTICLES,
         "sortby": "publishedAt",
         "apikey": GNEWS_API_KEY
     }
@@ -136,88 +151,79 @@ def get_news():
     return data.get("articles", [])
 
 
-# =========================
-# CATEGORY
-# =========================
+# ==========================================
+# GEMINI TRANSLATION
+# ==========================================
 
-def classify_article(article):
+def translate_news(title, description):
 
-    text = (
-        clean_text(article.get("title", "")) +
-        " " +
-        clean_text(article.get("description", ""))
-    ).lower()
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY is missing"
+        )
 
-    entertainment = [
-        "celebrity",
-        "actor",
-        "actress",
-        "singer",
-        "concert",
-        "movie",
-        "film",
-        "music",
-        "k-pop",
-        "artist",
-        "entertainment"
-    ]
+    client = genai.Client(
+        api_key=GEMINI_API_KEY
+    )
 
-    food = [
-        "food",
-        "restaurant",
-        "cafe",
-        "chef",
-        "dining",
-        "recipe",
-        "menu",
-        "eat",
-        "donut",
-        "dessert"
-    ]
+    prompt = f"""
+You are the editor of a Malaysian news Telegram channel called MYBUZZ.
 
-    tech = [
-        "technology",
-        "technology",
-        "iphone",
-        "android",
-        "google",
-        "apple",
-        "samsung",
-        "ai",
-        "artificial intelligence",
-        "gadget",
-        "software"
-    ]
+Translate and rewrite the following English news into natural,
+short and easy-to-read Chinese and Bahasa Melayu.
 
-    viral = [
-        "viral",
-        "trending",
-        "tiktok",
-        "instagram",
-        "social media",
-        "video",
-        "shocking",
-        "surprise"
-    ]
+IMPORTANT:
+- Do NOT invent facts.
+- Keep names, places, dates and numbers accurate.
+- Keep the meaning of the original news.
+- Make the title attractive but factual.
+- Chinese should be natural Malaysian Chinese.
+- Malay should be natural Bahasa Melayu used in Malaysia.
+- Keep the summary short.
+- Do not use markdown.
+- Return ONLY valid JSON.
 
-    if any(x in text for x in entertainment):
-        return "🎬"
+Required JSON format:
 
-    if any(x in text for x in food):
-        return "🍩"
+{{
+  "chinese_title": "...",
+  "chinese_summary": "...",
+  "malay_title": "...",
+  "malay_summary": "..."
+}}
 
-    if any(x in text for x in tech):
-        return "💻"
+English title:
+{title}
 
-    if any(x in text for x in viral):
-        return "🔥"
+English description:
+{description}
+"""
 
-    return "🇲🇾"
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
+
+    text = response.text.strip()
+
+    # Remove possible markdown code fences
+    if text.startswith("```"):
+        text = text.replace(
+            "```json",
+            ""
+        ).replace(
+            "```",
+            ""
+        ).strip()
+
+    data = json.loads(text)
+
+    return data
 
 
-# =========================
+# ==========================================
 # TELEGRAM
-# =========================
+# ==========================================
 
 def send_photo(photo_url, caption):
 
@@ -227,7 +233,7 @@ def send_photo(photo_url, caption):
         )
 
     telegram_url = (
-        f"https://api.telegram.org/"
+        "https://api.telegram.org/"
         f"bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     )
 
@@ -254,11 +260,75 @@ def send_photo(photo_url, caption):
         )
 
 
-# =========================
-# MESSAGE
-# =========================
+# ==========================================
+# CATEGORY
+# ==========================================
 
-def create_caption(article):
+def get_category(title, description):
+
+    text = (
+        f"{title} {description}"
+    ).lower()
+
+    if any(x in text for x in [
+        "food",
+        "restaurant",
+        "cafe",
+        "chef",
+        "dining",
+        "recipe",
+        "donut",
+        "dessert"
+    ]):
+        return "🍩"
+
+    if any(x in text for x in [
+        "celebrity",
+        "actor",
+        "actress",
+        "singer",
+        "concert",
+        "movie",
+        "film",
+        "music",
+        "entertainment"
+    ]):
+        return "🎬"
+
+    if any(x in text for x in [
+        "technology",
+        "iphone",
+        "android",
+        "apple",
+        "samsung",
+        "artificial intelligence",
+        "ai",
+        "gadget",
+        "software"
+    ]):
+        return "💻"
+
+    if any(x in text for x in [
+        "viral",
+        "trending",
+        "tiktok",
+        "instagram",
+        "social media",
+        "shocking"
+    ]):
+        return "🔥"
+
+    return "🇲🇾"
+
+
+# ==========================================
+# CREATE TELEGRAM CAPTION
+# ==========================================
+
+def create_caption(
+    article,
+    translation
+):
 
     title = clean_text(
         article.get("title", "")
@@ -270,36 +340,59 @@ def create_caption(article):
 
     url = article.get("url", "")
 
-    emoji = classify_article(article)
+    emoji = get_category(
+        title,
+        description
+    )
 
-    # 限制摘要长度
-    if len(description) > 220:
-        description = (
-            description[:220].rstrip() +
-            "..."
+    chinese_title = clean_text(
+        translation.get(
+            "chinese_title",
+            title
         )
+    )
 
-    # 简单英文 → 中文/马来文处理
-    # 当前版本先保持内容准确，
-    # 后续可以接 AI 翻译 API。
-    chinese_title = title
-    malay_title = title
+    chinese_summary = clean_text(
+        translation.get(
+            "chinese_summary",
+            description
+        )
+    )
 
-    chinese_description = description
-    malay_description = description
+    malay_title = clean_text(
+        translation.get(
+            "malay_title",
+            title
+        )
+    )
+
+    malay_summary = clean_text(
+        translation.get(
+            "malay_summary",
+            description
+        )
+    )
 
     caption = (
-        f"{emoji} <b>{html.escape(chinese_title)}</b>\n\n"
+        f"{emoji} "
+        f"<b>{html.escape(chinese_title)}</b>"
+        f"\n\n"
 
-        f"🇨🇳 {html.escape(chinese_description)}\n\n"
+        f"🇨🇳 "
+        f"{html.escape(chinese_summary)}"
+        f"\n\n"
 
-        f"🇲🇾 <b>{html.escape(malay_title)}</b>\n\n"
+        f"🇲🇾 "
+        f"<b>{html.escape(malay_title)}</b>"
+        f"\n\n"
 
-        f"{html.escape(malay_description)}\n\n"
+        f"{html.escape(malay_summary)}"
+        f"\n\n"
 
         f'👉 <a href="{html.escape(url)}">'
         f"点击阅读完整新闻"
-        f"</a>\n"
+        f"</a>"
+        f"\n"
 
         f'👉 <a href="{html.escape(url)}">'
         f"Klik untuk baca berita penuh"
@@ -309,14 +402,14 @@ def create_caption(article):
     return caption
 
 
-# =========================
+# ==========================================
 # MAIN
-# =========================
+# ==========================================
 
 def main():
 
     print("================================")
-    print("MYBUZZ NEWS BOT V3")
+    print("MYBUZZ NEWS BOT V4")
     print("================================")
 
     init_db()
@@ -329,7 +422,12 @@ def main():
         print("ERROR: TELEGRAM_BOT_TOKEN missing")
         return
 
+    if not GEMINI_API_KEY:
+        print("ERROR: GEMINI_API_KEY missing")
+        return
+
     print("GNews API: OK")
+    print("Gemini API: OK")
     print(
         f"Telegram: {TELEGRAM_CHAT_ID}"
     )
@@ -338,12 +436,15 @@ def main():
     print("Fetching Malaysia news...")
 
     try:
+
         articles = get_news()
 
     except Exception as e:
+
         print(
             f"GNews error: {e}"
         )
+
         return
 
     print(
@@ -361,6 +462,10 @@ def main():
             article.get("title", "")
         )
 
+        description = clean_text(
+            article.get("description", "")
+        )
+
         url = clean_text(
             article.get("url", "")
         )
@@ -370,6 +475,14 @@ def main():
         )
 
         if not title or not url:
+            continue
+
+        if not image_url:
+
+            print(
+                f"No image, skipping: {title}"
+            )
+
             continue
 
         article_hash = hashlib.sha256(
@@ -384,17 +497,28 @@ def main():
 
             continue
 
-        # 没图片就跳过
-        if not image_url:
+        print(
+            f"Translating: {title}"
+        )
+
+        try:
+
+            translation = translate_news(
+                title,
+                description
+            )
+
+        except Exception as e:
 
             print(
-                f"No image, skipping: {title}"
+                f"Gemini error: {e}"
             )
 
             continue
 
         caption = create_caption(
-            article
+            article,
+            translation
         )
 
         try:

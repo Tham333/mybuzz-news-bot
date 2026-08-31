@@ -1,4 +1,2 @@
-# V1 uses Python standard library only.
-# No pip packages are required.
 requests==2.32.5
-google-genai
+google-genai>=1.0.0

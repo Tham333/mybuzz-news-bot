@@ -15,16 +15,17 @@ from groq import Groq
 
 # ============================================================
 # MYBUZZ V6
+# Malaysia News Telegram Bot
 # ============================================================
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 
-# Current Groq model
+# Current Groq production model
 GROQ_MODEL = os.getenv(
     "GROQ_MODEL",
-    "llama-3.3-70b-versatile"
+    "openai/gpt-oss-20b"
 ).strip()
 
 MAX_NEWS = int(os.getenv("MAX_NEWS", "5"))
@@ -77,10 +78,11 @@ RSS_FEEDS = [
 
 
 # ============================================================
-# CONFIG
+# CONFIG VALIDATION
 # ============================================================
 
 def validate_config():
+
     missing = []
 
     if not BOT_TOKEN:
@@ -93,6 +95,11 @@ def validate_config():
         missing.append("GROQ_API_KEY")
 
     if missing:
+        logger.error(
+            "Missing secrets: %s",
+            ", ".join(missing)
+        )
+
         raise RuntimeError(
             "Missing required secrets: "
             + ", ".join(missing)
@@ -104,32 +111,45 @@ def validate_config():
 # ============================================================
 
 def load_state():
+
     if not os.path.exists(STATE_FILE):
+
         return {
             "posted_urls": [],
             "posted_hashes": []
         }
 
     try:
+
         with open(
             STATE_FILE,
             "r",
             encoding="utf-8"
         ) as f:
+
             data = json.load(f)
 
         if not isinstance(data, dict):
+
             return {
                 "posted_urls": [],
                 "posted_hashes": []
             }
 
-        data.setdefault("posted_urls", [])
-        data.setdefault("posted_hashes", [])
+        data.setdefault(
+            "posted_urls",
+            []
+        )
+
+        data.setdefault(
+            "posted_hashes",
+            []
+        )
 
         return data
 
     except Exception as e:
+
         logger.warning(
             "Could not read posted.json: %s",
             e
@@ -142,19 +162,23 @@ def load_state():
 
 
 def save_state(state):
-    state["posted_urls"] = state[
-        "posted_urls"
-    ][-500:]
 
-    state["posted_hashes"] = state[
-        "posted_hashes"
-    ][-500:]
+    state["posted_urls"] = (
+        state.get("posted_urls", [])
+        [-500:]
+    )
+
+    state["posted_hashes"] = (
+        state.get("posted_hashes", [])
+        [-500:]
+    )
 
     with open(
         STATE_FILE,
         "w",
         encoding="utf-8"
     ) as f:
+
         json.dump(
             state,
             f,
@@ -164,10 +188,11 @@ def save_state(state):
 
 
 # ============================================================
-# TEXT
+# TEXT HELPERS
 # ============================================================
 
 def clean_text(text):
+
     if not text:
         return ""
 
@@ -189,6 +214,7 @@ def clean_text(text):
 
 
 def normalize_url(url):
+
     if not url:
         return ""
 
@@ -205,6 +231,7 @@ def normalize_url(url):
 
 
 def article_hash(title):
+
     normalized = re.sub(
         r"\s+",
         " ",
@@ -217,7 +244,7 @@ def article_hash(title):
 
 
 # ============================================================
-# DATE
+# DATE HELPERS
 # ============================================================
 
 def parse_entry_date(entry):
@@ -234,14 +261,20 @@ def parse_entry_date(entry):
             continue
 
         try:
-            dt = parsedate_to_datetime(value)
+
+            dt = parsedate_to_datetime(
+                value
+            )
 
             if dt.tzinfo is None:
+
                 dt = dt.replace(
                     tzinfo=timezone.utc
                 )
 
-            return dt.astimezone(MY_TZ)
+            return dt.astimezone(
+                MY_TZ
+            )
 
         except Exception:
             continue
@@ -262,7 +295,7 @@ def is_recent(dt):
 
 
 # ============================================================
-# RSS
+# RSS FETCH
 # ============================================================
 
 def fetch_feed(source):
@@ -449,7 +482,7 @@ def sort_news(news):
 
 
 # ============================================================
-# GROQ
+# GROQ CLIENT
 # ============================================================
 
 def get_groq_client():
@@ -458,6 +491,66 @@ def get_groq_client():
         api_key=GROQ_API_KEY
     )
 
+
+# ============================================================
+# GROQ MODEL CHECK
+# ============================================================
+
+def check_groq_model():
+
+    logger.info(
+        "Checking Groq model: %s",
+        GROQ_MODEL
+    )
+
+    try:
+
+        client = get_groq_client()
+
+        response = client.chat.completions.create(
+
+            model=GROQ_MODEL,
+
+            messages=[
+                {
+                    "role": "user",
+                    "content":
+                        "Reply with exactly: OK"
+                }
+            ],
+
+            temperature=0,
+
+            max_tokens=5
+        )
+
+        if not response.choices:
+
+            logger.error(
+                "Groq model returned no choices."
+            )
+
+            return False
+
+        logger.info(
+            "Groq model check: OK"
+        )
+
+        return True
+
+    except Exception as e:
+
+        logger.error(
+            "Groq model check FAILED: %s",
+            e
+        )
+
+        return False
+
+
+# ============================================================
+# GROQ GENERATE
+# ============================================================
 
 def groq_generate(prompt):
 
@@ -492,6 +585,7 @@ def groq_generate(prompt):
         )
 
         if not response.choices:
+
             return ""
 
         content = (
@@ -502,6 +596,7 @@ def groq_generate(prompt):
         )
 
         if not content:
+
             return ""
 
         return content.strip()
@@ -513,12 +608,12 @@ def groq_generate(prompt):
             e
         )
 
-        # No repeated retry.
+        # V6 does not repeatedly retry.
         return ""
 
 
 # ============================================================
-# AI PROCESSING
+# AI ARTICLE PROCESSING
 # ============================================================
 
 def process_article(article):
@@ -528,8 +623,8 @@ def process_article(article):
     source = article["source"]
 
     prompt = f"""
-Create MYBUZZ content from this Malaysian
-news article.
+Create MYBUZZ content from the following
+Malaysian news article.
 
 SOURCE:
 {source}
@@ -540,7 +635,9 @@ TITLE:
 SUMMARY:
 {summary}
 
-Return ONLY valid JSON:
+Return ONLY valid JSON.
+
+Required structure:
 
 {{
   "title_en": "...",
@@ -556,13 +653,15 @@ Rules:
 1. Do not invent facts.
 2. Keep headlines short.
 3. English must sound natural.
-4. Bahasa Melayu must sound natural in Malaysia.
+4. Bahasa Melayu must sound natural for Malaysia.
 5. Chinese must be Simplified Chinese.
 6. Summary must be 1-2 short sentences.
-7. No emojis.
-8. No markdown.
-9. No URLs.
-10. Do not mention that you are an AI.
+7. Do not add emojis.
+8. Do not use markdown.
+9. Do not include URLs.
+10. Do not mention AI.
+11. Keep the meaning faithful to the source.
+12. Do not exaggerate the news.
 """
 
     result = groq_generate(
@@ -570,11 +669,12 @@ Rules:
     )
 
     if not result:
+
         return None
 
     result = result.strip()
 
-    # Remove markdown JSON fences
+    # Remove markdown code fences
     result = re.sub(
         r"^```json\s*",
         "",
@@ -597,7 +697,7 @@ Rules:
     except Exception:
 
         logger.warning(
-            "Invalid JSON returned by Groq: %s",
+            "Invalid JSON from Groq: %s",
             article["title"]
         )
 
@@ -664,7 +764,7 @@ def send_telegram(message):
             )
 
             logger.error(
-                response.text[:500]
+                response.text[:1000]
             )
 
             return False
@@ -705,7 +805,7 @@ def safe_html(text):
 
 
 # ============================================================
-# MESSAGE
+# TELEGRAM MESSAGE
 # ============================================================
 
 def build_message(
@@ -772,9 +872,7 @@ def build_message(
 # TELEGRAM LENGTH
 # ============================================================
 
-def telegram_safe_length(
-    message
-):
+def telegram_safe_length(message):
 
     return len(message) <= 3900
 
@@ -802,9 +900,38 @@ def main():
         "======================================"
     )
 
+    # --------------------------------------------------------
+    # Validate secrets
+    # --------------------------------------------------------
+
     validate_config()
 
+    # --------------------------------------------------------
+    # Check Groq before downloading news
+    # --------------------------------------------------------
+
+    if not check_groq_model():
+
+        logger.error(
+            "Groq model is unavailable."
+        )
+
+        logger.error(
+            "MYBUZZ V6 stopped before "
+            "processing news."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Load state
+    # --------------------------------------------------------
+
     state = load_state()
+
+    # --------------------------------------------------------
+    # Fetch RSS
+    # --------------------------------------------------------
 
     news = collect_news()
 
@@ -820,6 +947,10 @@ def main():
         )
 
         return
+
+    # --------------------------------------------------------
+    # Remove duplicates
+    # --------------------------------------------------------
 
     news = filter_duplicates(
         news,
@@ -843,6 +974,10 @@ def main():
 
         return
 
+    # --------------------------------------------------------
+    # Select news
+    # --------------------------------------------------------
+
     selected = news[
         :MAX_NEWS
     ]
@@ -851,6 +986,10 @@ def main():
         "Selected %d articles.",
         len(selected)
     )
+
+    # --------------------------------------------------------
+    # Process and send
+    # --------------------------------------------------------
 
     sent_count = 0
 
@@ -873,8 +1012,8 @@ def main():
         if not ai:
 
             logger.warning(
-                "Skipping article because "
-                "AI processing failed."
+                "AI processing failed. "
+                "Skipping article."
             )
 
             continue
@@ -890,7 +1029,7 @@ def main():
 
             logger.warning(
                 "Telegram message too long. "
-                "Skipping article."
+                "Skipping."
             )
 
             continue
@@ -923,6 +1062,7 @@ def main():
                 "Telegram sent successfully."
             )
 
+            # Small delay between messages
             time.sleep(2)
 
         else:
@@ -930,6 +1070,10 @@ def main():
             logger.error(
                 "Telegram send failed."
             )
+
+    # --------------------------------------------------------
+    # Save state
+    # --------------------------------------------------------
 
     save_state(
         state
@@ -950,7 +1094,7 @@ def main():
 
 
 # ============================================================
-# START
+# RUN
 # ============================================================
 
 if __name__ == "__main__":

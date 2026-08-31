@@ -1,19 +1,35 @@
 import os
-import re
-import html
 import json
-import time
-import hashlib
 import logging
-from urllib.parse import urljoin
+import hashlib
+from datetime import datetime, timezone
 
 import feedparser
 import requests
-from groq import Groq
+from openai import OpenAI
 
 
 # ============================================================
 # MYBUZZ NEWS BOT V6
+# ============================================================
+
+BOT_NAME = "MYBUZZ V6"
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_MODEL = "openai/gpt-oss-20b"
+
+POSTER_FILE = "poster.json"
+
+MAX_ARTICLES = 1
+REQUEST_TIMEOUT = 20
+
+
+# ============================================================
+# LOGGING
 # ============================================================
 
 logging.basicConfig(
@@ -21,27 +37,20 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-logger = logging.getLogger("MYBUZZ")
+logger = logging.getLogger(BOT_NAME)
 
 
 # ============================================================
-# CONFIG
+# OPENAI CLIENT -> GROQ
 # ============================================================
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+if not GROQ_API_KEY:
+    raise RuntimeError("GROQ_API_KEY is missing.")
 
-# Groq model
-GROQ_MODEL = "openai/gpt-oss-20b"
-
-# IMPORTANT:
-# One execution = maximum ONE news
-MAX_ARTICLES = 1
-
-REQUEST_TIMEOUT = 20
-
-SEEN_FILE = "seen_articles.json"
+client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url=GROQ_BASE_URL,
+)
 
 
 # ============================================================
@@ -51,142 +60,299 @@ SEEN_FILE = "seen_articles.json"
 RSS_SOURCES = [
     {
         "name": "Malay Mail",
-        "url": "https://www.malaymail.com/feed/rss/malaysia",
+        "url": "https://www.malaymail.com/feed/rss/malaysia"
     },
     {
         "name": "New Straits Times",
-        "url": "https://www.nst.com.my/feed",
+        "url": "https://www.nst.com.my/feed"
     },
     {
         "name": "The Star",
-        "url": "https://www.thestar.com.my/rss/News",
+        "url": "https://www.thestar.com.my/rss/News"
     },
     {
         "name": "The Edge Malaysia",
-        "url": "https://theedgemalaysia.com/rss.xml",
+        "url": "https://theedgemalaysia.com/rss.xml"
     },
     {
         "name": "Bernama",
-        "url": "https://bernama.com/en/rss/news.php",
+        "url": "https://bernama.com/en/rss/news.php"
     },
 ]
 
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 "
-        "(X11; Linux x86_64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/131.0 Safari/537.36"
-    )
-}
-
-
 # ============================================================
-# CHECK ENVIRONMENT
+# POSTER / DUPLICATE STORAGE
 # ============================================================
 
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is missing.")
+def load_posted():
+    if not os.path.exists(POSTER_FILE):
+        return []
 
-if not TELEGRAM_BOT_TOKEN:
-    raise RuntimeError("TELEGRAM_BOT_TOKEN is missing.")
-
-if not TELEGRAM_CHAT_ID:
-    raise RuntimeError("TELEGRAM_CHAT_ID is missing.")
-
-
-# ============================================================
-# GROQ CLIENT
-# ============================================================
-
-groq_client = Groq(
-    api_key=GROQ_API_KEY
-)
-
-
-# ============================================================
-# SEEN ARTICLES
-# ============================================================
-
-def load_seen():
     try:
-        if not os.path.exists(SEEN_FILE):
-            return set()
-
-        with open(
-            SEEN_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
+        with open(POSTER_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         if isinstance(data, list):
-            return set(data)
+            return data
+
+        if isinstance(data, dict):
+            return data.get("posted", [])
 
     except Exception as e:
-        logger.warning(
-            "Could not load seen articles: %s",
-            e
-        )
+        logger.warning("Could not read poster.json: %s", e)
 
-    return set()
+    return []
 
 
-def save_seen(seen):
+def save_posted(posted):
     try:
-        data = list(seen)
-
-        # Keep database small
-        if len(data) > 1000:
-            data = data[-1000:]
-
-        with open(
-            SEEN_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
+        with open(POSTER_FILE, "w", encoding="utf-8") as f:
             json.dump(
-                data,
+                posted[-500:],
                 f,
                 ensure_ascii=False,
                 indent=2
             )
+    except Exception as e:
+        logger.error("Could not save poster.json: %s", e)
+
+
+def article_id(article):
+    link = article.get("link", "").strip()
+
+    if link:
+        return hashlib.sha256(link.encode("utf-8")).hexdigest()
+
+    title = article.get("title", "").strip()
+
+    return hashlib.sha256(
+        title.encode("utf-8")
+    ).hexdigest()
+
+
+# ============================================================
+# RSS
+# ============================================================
+
+def fetch_rss(source):
+    name = source["name"]
+    url = source["url"]
+
+    logger.info("Fetching RSS: %s", name)
+
+    try:
+        response = requests.get(
+            url,
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 "
+                    "MYBUZZ-News-Bot/6.0"
+                )
+            }
+        )
+
+        response.raise_for_status()
+
+        feed = feedparser.parse(response.content)
+
+        articles = []
+
+        for entry in feed.entries[:50]:
+
+            title = (
+                entry.get("title")
+                or ""
+            ).strip()
+
+            link = (
+                entry.get("link")
+                or ""
+            ).strip()
+
+            summary = (
+                entry.get("summary")
+                or entry.get("description")
+                or ""
+            ).strip()
+
+            if not title or not link:
+                continue
+
+            image_url = extract_image(entry)
+
+            articles.append({
+                "source": name,
+                "title": title,
+                "link": link,
+                "summary": summary,
+                "image": image_url,
+            })
+
+        logger.info(
+            "%s: %s recent articles",
+            name,
+            len(articles)
+        )
+
+        return articles
 
     except Exception as e:
         logger.warning(
-            "Could not save seen articles: %s",
+            "RSS failed [%s]: %s",
+            name,
             e
         )
 
+        return []
 
-SEEN = load_seen()
+
+def extract_image(entry):
+    # media_content
+    media_content = entry.get("media_content")
+
+    if media_content:
+        for media in media_content:
+            if isinstance(media, dict):
+                url = media.get("url")
+
+                if url:
+                    return url
+
+    # media_thumbnail
+    media_thumbnail = entry.get("media_thumbnail")
+
+    if media_thumbnail:
+        for media in media_thumbnail:
+            if isinstance(media, dict):
+                url = media.get("url")
+
+                if url:
+                    return url
+
+    # enclosure
+    enclosures = entry.get("enclosures")
+
+    if enclosures:
+        for enclosure in enclosures:
+            if isinstance(enclosure, dict):
+                url = enclosure.get("href") or enclosure.get("url")
+
+                if url:
+                    return url
+
+    # links
+    links = entry.get("links")
+
+    if links:
+        for item in links:
+            if not isinstance(item, dict):
+                continue
+
+            href = item.get("href", "")
+            link_type = item.get("type", "")
+
+            if (
+                href
+                and (
+                    link_type.startswith("image/")
+                    or "image" in href.lower()
+                )
+            ):
+                return href
+
+    return None
 
 
 # ============================================================
-# TEXT HELPERS
+# GET IMAGE FROM NEWS PAGE IF RSS HAS NO IMAGE
 # ============================================================
 
-def clean_html(text):
-    if not text:
-        return ""
+def find_image_from_page(url):
+    try:
+        response = requests.get(
+            url,
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 "
+                    "(Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 "
+                    "Chrome/139.0 Safari/537.36"
+                )
+            }
+        )
 
-    text = html.unescape(str(text))
+        response.raise_for_status()
 
-    text = re.sub(
-        r"<script.*?</script>",
-        " ",
-        text,
-        flags=re.I | re.S
-    )
+        html = response.text
 
-    text = re.sub(
-        r"<style.*?</style>",
-        " ",
-        text,
-        flags=re.I | re.S
-    )
+        # og:image
+        markers = [
+            'property="og:image"',
+            "property='og:image'",
+            'name="twitter:image"',
+            "name='twitter:image'",
+        ]
+
+        for marker in markers:
+            position = html.lower().find(marker.lower())
+
+            if position == -1:
+                continue
+
+            section = html[
+                max(0, position - 500):
+                position + 1000
+            ]
+
+            # content="..."
+            lower_section = section.lower()
+
+            content_pos = lower_section.find("content=")
+
+            if content_pos != -1:
+
+                start = content_pos + len("content=")
+
+                if start < len(section):
+
+                    quote = section[start]
+
+                    if quote in ('"', "'"):
+
+                        end = section.find(
+                            quote,
+                            start + 1
+                        )
+
+                        if end != -1:
+                            image = section[
+                                start + 1:end
+                            ].strip()
+
+                            if image.startswith("http"):
+                                return image
+
+    except Exception as e:
+        logger.warning(
+            "Could not find page image: %s",
+            e
+        )
+
+    return None
+
+
+# ============================================================
+# CLEAN HTML
+# ============================================================
+
+def clean_text(text):
+    import re
+    from html import unescape
+
+    text = unescape(text)
 
     text = re.sub(
         r"<[^>]+>",
@@ -203,591 +369,92 @@ def clean_html(text):
     return text.strip()
 
 
-def escape_html(text):
-    return html.escape(
-        str(text),
-        quote=False
-    )
-
-
-def make_article_id(title, link):
-    raw = (
-        f"{title}|{link}"
-        .encode("utf-8")
-    )
-
-    return hashlib.sha256(
-        raw
-    ).hexdigest()
-
-
 # ============================================================
-# IMAGE DETECTION
+# GROQ AI
 # ============================================================
 
-def get_image_from_entry(entry):
-
-    # --------------------------------------------------------
-    # media_content
-    # --------------------------------------------------------
-
-    try:
-        media_content = entry.get(
-            "media_content",
-            []
-        )
-
-        for media in media_content:
-            url = media.get("url")
-
-            if url:
-                return url
-
-    except Exception:
-        pass
-
-
-    # --------------------------------------------------------
-    # media_thumbnail
-    # --------------------------------------------------------
-
-    try:
-        thumbnails = entry.get(
-            "media_thumbnail",
-            []
-        )
-
-        for media in thumbnails:
-            url = media.get("url")
-
-            if url:
-                return url
-
-    except Exception:
-        pass
-
-
-    # --------------------------------------------------------
-    # enclosure
-    # --------------------------------------------------------
-
-    try:
-        enclosures = entry.get(
-            "enclosures",
-            []
-        )
-
-        for enclosure in enclosures:
-
-            url = (
-                enclosure.get("href")
-                or enclosure.get("url")
-            )
-
-            if not url:
-                continue
-
-            content_type = (
-                enclosure.get("type", "")
-                .lower()
-            )
-
-            if (
-                content_type.startswith("image/")
-                or re.search(
-                    r"\.(jpg|jpeg|png|webp)(\?.*)?$",
-                    url,
-                    re.I
-                )
-            ):
-                return url
-
-    except Exception:
-        pass
-
-
-    # --------------------------------------------------------
-    # image field
-    # --------------------------------------------------------
-
-    try:
-        image = entry.get("image")
-
-        if isinstance(image, dict):
-
-            url = (
-                image.get("href")
-                or image.get("url")
-            )
-
-            if url:
-                return url
-
-    except Exception:
-        pass
-
-
-    # --------------------------------------------------------
-    # Search <img> in RSS content
-    # --------------------------------------------------------
-
-    try:
-        content = ""
-
-        content += entry.get(
-            "summary",
-            ""
-        )
-
-        for item in entry.get(
-            "content",
-            []
-        ):
-            content += item.get(
-                "value",
-                ""
-            )
-
-        match = re.search(
-            r'<img[^>]+(?:src|data-src)=["\']([^"\']+)',
-            content,
-            re.I
-        )
-
-        if match:
-            return html.unescape(
-                match.group(1)
-            )
-
-    except Exception:
-        pass
-
-
-    return None
-
-
-# ============================================================
-# DOWNLOAD IMAGE
-# ============================================================
-
-def download_image(
-    image_url,
-    article_url
-):
-
-    if not image_url:
-        return None
-
-    try:
-
-        image_url = urljoin(
-            article_url,
-            image_url
-        )
-
-        logger.info(
-            "Downloading image: %s",
-            image_url
-        )
-
-        response = requests.get(
-            image_url,
-            headers=HEADERS,
-            timeout=REQUEST_TIMEOUT,
-            stream=True
-        )
-
-        response.raise_for_status()
-
-        content_type = (
-            response.headers
-            .get("content-type", "")
-            .lower()
-        )
-
-        if (
-            not content_type.startswith("image/")
-            and not re.search(
-                r"\.(jpg|jpeg|png|webp)(\?.*)?$",
-                image_url,
-                re.I
-            )
-        ):
-            logger.warning(
-                "URL is not an image: %s",
-                content_type
-            )
-
-            return None
-
-
-        extension = ".jpg"
-
-        if "png" in content_type:
-            extension = ".png"
-
-        elif "webp" in content_type:
-            extension = ".webp"
-
-
-        filename = (
-            f"mybuzz_{int(time.time() * 1000)}"
-            f"{extension}"
-        )
-
-        filepath = os.path.join(
-            "/tmp",
-            filename
-        )
-
-
-        total = 0
-
-        with open(
-            filepath,
-            "wb"
-        ) as f:
-
-            for chunk in response.iter_content(
-                chunk_size=8192
-            ):
-
-                if not chunk:
-                    continue
-
-                total += len(chunk)
-
-                # Maximum 10MB
-                if total > 10 * 1024 * 1024:
-
-                    logger.warning(
-                        "Image larger than 10MB."
-                    )
-
-                    return None
-
-                f.write(chunk)
-
-
-        if not os.path.exists(filepath):
-            return None
-
-
-        if os.path.getsize(filepath) < 1000:
-
-            os.remove(filepath)
-
-            return None
-
-
-        logger.info(
-            "Image downloaded: %s bytes",
-            total
-        )
-
-        return filepath
-
-
-    except Exception as e:
-
-        logger.warning(
-            "Image download failed: %s",
-            e
-        )
-
-        return None
-
-
-# ============================================================
-# FETCH RSS
-# ============================================================
-
-def fetch_rss(source):
-
-    name = source["name"]
-    url = source["url"]
-
-    logger.info(
-        "Fetching RSS: %s",
-        name
-    )
-
-    try:
-
-        response = requests.get(
-            url,
-            headers=HEADERS,
-            timeout=REQUEST_TIMEOUT
-        )
-
-        response.raise_for_status()
-
-        feed = feedparser.parse(
-            response.content
-        )
-
-        articles = []
-
-        for entry in feed.entries[:50]:
-
-            title = clean_html(
-                entry.get(
-                    "title",
-                    ""
-                )
-            )
-
-            link = (
-                entry.get(
-                    "link",
-                    ""
-                )
-                or ""
-            ).strip()
-
-
-            if not title or not link:
-                continue
-
-
-            summary = clean_html(
-                entry.get(
-                    "summary",
-                    ""
-                )
-            )
-
-
-            if not summary:
-
-                summary = clean_html(
-                    entry.get(
-                        "description",
-                        ""
-                    )
-                )
-
-
-            image_url = (
-                get_image_from_entry(
-                    entry
-                )
-            )
-
-
-            articles.append({
-
-                "source": name,
-
-                "title": title,
-
-                "link": link,
-
-                "summary": summary,
-
-                "image_url": image_url,
-
-            })
-
-
-        logger.info(
-            "%s: %s recent articles",
-            name,
-            len(articles)
-        )
-
-        return articles
-
-
-    except Exception as e:
-
-        logger.warning(
-            "RSS failed [%s]: %s",
-            name,
-            e
-        )
-
-        return []
-
-
-# ============================================================
-# GET ALL NEWS
-# ============================================================
-
-def get_all_articles():
-
-    all_articles = []
-
-    for source in RSS_SOURCES:
-
-        articles = fetch_rss(
-            source
-        )
-
-        all_articles.extend(
-            articles
-        )
-
-    logger.info(
-        "Total RSS articles: %s",
-        len(all_articles)
-    )
-
-    return all_articles
-
-
-# ============================================================
-# GROQ PROCESSING
-# ============================================================
-
-def process_with_groq(article):
-
-    title = article["title"]
-
-    summary = article["summary"]
-
+def generate_translation(article):
+    title = clean_text(article["title"])
+    summary = clean_text(article["summary"])
 
     prompt = f"""
-You are the editor of MYBUZZ, a Malaysian news channel.
+You are MYBUZZ Malaysia news editor.
 
-Rewrite this news into a concise bilingual Telegram news post.
-
-LANGUAGE REQUIREMENTS:
-
-1. Chinese:
-- Simplified Chinese.
-- Natural Malaysian Chinese news style.
-- Create a short attractive headline.
-- Summary should be 1-2 sentences.
-- Keep all names, places, numbers and facts accurate.
-
-2. Malay:
-- Natural Malaysian Malay.
-- Create a short headline.
-- Summary should be 1-2 sentences.
-- Keep all names, places, numbers and facts accurate.
+Rewrite the following Malaysian news into a short Telegram news post.
 
 IMPORTANT:
-- Do NOT invent information.
-- Do NOT add opinions.
-- Do NOT add facts not contained in the source.
-- Do NOT include links.
-- Do NOT use markdown.
+- Do NOT invent facts.
+- Keep names, places, numbers and facts accurate.
+- Chinese must be Simplified Chinese.
+- Malay must be natural Malaysian Malay.
+- Keep the Chinese version concise.
+- Keep the Malay version concise.
+- Do not include URLs.
+- Do not use Markdown.
+- Do not add headings such as "Chinese" or "Malay".
 - Return ONLY valid JSON.
 
-JSON FORMAT:
+Required JSON format:
 
 {{
   "zh_title": "...",
-  "zh_summary": "...",
+  "zh_body": "...",
   "ms_title": "...",
-  "ms_summary": "..."
+  "ms_body": "..."
 }}
 
 SOURCE:
 {article["source"]}
 
-ORIGINAL TITLE:
+TITLE:
 {title}
 
-ORIGINAL SUMMARY:
-{summary[:6000]}
+SUMMARY:
+{summary}
 """
 
-
     try:
-
-        response = groq_client.chat.completions.create(
-
+        response = client.responses.create(
             model=GROQ_MODEL,
-
-            messages=[
-
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a professional "
-                        "Malaysian bilingual news editor. "
-                        "Return only valid JSON."
-                    )
-                },
-
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-
-            ],
-
-            temperature=0.2,
-
-            max_tokens=1000,
-
+            input=prompt,
         )
 
+        output = response.output_text.strip()
 
-        content = (
-            response
-            .choices[0]
-            .message
-            .content
+        logger.info(
+            "AI response received."
         )
 
+        # Remove possible markdown fences
+        if output.startswith("```"):
+            output = output.replace(
+                "```json",
+                ""
+            ).replace(
+                "```",
+                ""
+            ).strip()
 
-        if not content:
-            raise ValueError(
-                "Empty Groq response."
-            )
-
-
-        content = content.strip()
-
-
-        # Remove ```json
-        content = re.sub(
-            r"^```json\s*",
-            "",
-            content,
-            flags=re.I
-        )
-
-
-        content = re.sub(
-            r"\s*```$",
-            "",
-            content
-        )
-
-
-        data = json.loads(
-            content
-        )
-
+        data = json.loads(output)
 
         required = [
             "zh_title",
-            "zh_summary",
+            "zh_body",
             "ms_title",
-            "ms_summary"
+            "ms_body",
         ]
 
-
         for key in required:
-
             if not data.get(key):
-
                 raise ValueError(
-                    f"Missing Groq field: {key}"
+                    f"Missing AI field: {key}"
                 )
-
 
         return data
 
-
     except Exception as e:
-
         logger.error(
-            "Groq API failed: %s",
+            "Groq/OpenAI API failed: %s",
             e
         )
 
@@ -795,311 +462,141 @@ ORIGINAL SUMMARY:
 
 
 # ============================================================
-# TELEGRAM URL
+# TELEGRAM FORMAT
 # ============================================================
 
-def telegram_api(
-    method
-):
+def build_caption(article, ai):
+    source = article["source"]
+    link = article["link"]
 
-    return (
-        "https://api.telegram.org/"
-        f"bot{TELEGRAM_BOT_TOKEN}/"
-        f"{method}"
-    )
+    zh_title = ai["zh_title"].strip()
+    zh_body = ai["zh_body"].strip()
 
-
-# ============================================================
-# SEND PHOTO
-# ============================================================
-
-def send_photo(
-    image_path,
-    caption
-):
-
-    try:
-
-        with open(
-            image_path,
-            "rb"
-        ) as photo:
-
-            response = requests.post(
-
-                telegram_api(
-                    "sendPhoto"
-                ),
-
-                data={
-
-                    "chat_id":
-                        TELEGRAM_CHAT_ID,
-
-                    "caption":
-                        caption,
-
-                    "parse_mode":
-                        "HTML",
-
-                },
-
-                files={
-
-                    "photo":
-                        photo
-
-                },
-
-                timeout=60
-            )
-
-
-        if response.ok:
-
-            logger.info(
-                "Telegram photo sent successfully."
-            )
-
-            return True
-
-
-        logger.error(
-            "Telegram sendPhoto failed: %s",
-            response.text
-        )
-
-        return False
-
-
-    except Exception as e:
-
-        logger.error(
-            "Telegram sendPhoto error: %s",
-            e
-        )
-
-        return False
-
-
-# ============================================================
-# SEND TEXT
-# ============================================================
-
-def send_message(
-    text
-):
-
-    try:
-
-        response = requests.post(
-
-            telegram_api(
-                "sendMessage"
-            ),
-
-            data={
-
-                "chat_id":
-                    TELEGRAM_CHAT_ID,
-
-                "text":
-                    text,
-
-                "parse_mode":
-                    "HTML",
-
-                "disable_web_page_preview":
-                    False,
-
-            },
-
-            timeout=60
-        )
-
-
-        if response.ok:
-
-            logger.info(
-                "Telegram text sent successfully."
-            )
-
-            return True
-
-
-        logger.error(
-            "Telegram sendMessage failed: %s",
-            response.text
-        )
-
-        return False
-
-
-    except Exception as e:
-
-        logger.error(
-            "Telegram sendMessage error: %s",
-            e
-        )
-
-        return False
-
-
-# ============================================================
-# BUILD TELEGRAM CAPTION
-# ============================================================
-
-def build_caption(
-    article,
-    data
-):
-
-    zh_title = escape_html(
-        data["zh_title"]
-    )
-
-    zh_summary = escape_html(
-        data["zh_summary"]
-    )
-
-    ms_title = escape_html(
-        data["ms_title"]
-    )
-
-    ms_summary = escape_html(
-        data["ms_summary"]
-    )
-
-    link = escape_html(
-        article["link"]
-    )
-
+    ms_title = ai["ms_title"].strip()
+    ms_body = ai["ms_body"].strip()
 
     caption = (
-
-        f"🇲🇾 <b>{zh_title}</b>\n\n"
-
-        f"🇨🇳 {zh_summary}\n\n"
-
-        f"🇲🇾 <b>{ms_title}</b>\n\n"
-
-        f"{ms_summary}\n\n"
-
-        f'👉 <a href="{link}">'
-        f'点击阅读完整新闻'
-        f'</a>\n\n'
-
-        f'👉 <a href="{link}">'
-        f'Klik untuk baca berita penuh'
-        f'</a>'
-
+        f"🇲🇾 {zh_title}\n\n"
+        f"🇨🇳 {zh_body}\n\n"
+        f"🇲🇾 {ms_title}\n\n"
+        f"{ms_body}\n\n"
+        f'👉 <a href="{link}">点击阅读完整新闻</a>\n\n'
+        f'👉 <a href="{link}">Klik untuk baca berita penuh</a>'
     )
-
 
     return caption
 
 
 # ============================================================
-# PROCESS ONE ARTICLE
+# TELEGRAM SEND PHOTO
 # ============================================================
 
-def process_article(
-    article
-):
+def send_photo(image_url, caption):
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error(
+            "TELEGRAM_BOT_TOKEN is missing."
+        )
+        return False
 
-    logger.info(
-        "Processing: %s",
-        article["title"]
+    if not TELEGRAM_CHAT_ID:
+        logger.error(
+            "TELEGRAM_CHAT_ID is missing."
+        )
+        return False
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     )
 
+    try:
+        response = requests.post(
+            url,
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "photo": image_url,
+                "caption": caption,
+                "parse_mode": "HTML",
+            },
+            timeout=REQUEST_TIMEOUT
+        )
 
-    # --------------------------------------------------------
-    # AI
-    # --------------------------------------------------------
+        if response.ok:
+            logger.info(
+                "Telegram photo sent successfully."
+            )
+            return True
 
-    data = process_with_groq(
-        article
-    )
+        logger.error(
+            "Telegram photo failed: %s",
+            response.text
+        )
 
+        return False
 
-    if not data:
-
-        logger.warning(
-            "AI processing failed."
+    except Exception as e:
+        logger.error(
+            "Telegram photo exception: %s",
+            e
         )
 
         return False
 
 
-    # --------------------------------------------------------
-    # Build caption
-    # --------------------------------------------------------
+# ============================================================
+# TELEGRAM SEND MESSAGE
+# ============================================================
 
-    caption = build_caption(
-        article,
-        data
+def send_message(caption):
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error(
+            "TELEGRAM_BOT_TOKEN is missing."
+        )
+        return False
+
+    if not TELEGRAM_CHAT_ID:
+        logger.error(
+            "TELEGRAM_CHAT_ID is missing."
+        )
+        return False
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     )
 
-
-    # --------------------------------------------------------
-    # Image
-    # --------------------------------------------------------
-
-    image_path = download_image(
-
-        article.get(
-            "image_url"
-        ),
-
-        article["link"]
-
-    )
-
-
-    # --------------------------------------------------------
-    # Send photo
-    # --------------------------------------------------------
-
-    if image_path:
-
-        sent = send_photo(
-
-            image_path,
-
-            caption
-
+    try:
+        response = requests.post(
+            url,
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": caption,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": False,
+            },
+            timeout=REQUEST_TIMEOUT
         )
 
-
-        try:
-
-            os.remove(
-                image_path
+        if response.ok:
+            logger.info(
+                "Telegram message sent successfully."
             )
-
-        except Exception:
-
-            pass
-
-
-        if sent:
-
             return True
 
-
-        logger.warning(
-            "Photo failed. "
-            "Trying text message."
+        logger.error(
+            "Telegram message failed: %s",
+            response.text
         )
 
+        return False
 
-    # --------------------------------------------------------
-    # Fallback to text
-    # --------------------------------------------------------
+    except Exception as e:
+        logger.error(
+            "Telegram message exception: %s",
+            e
+        )
 
-    return send_message(
-        caption
-    )
+        return False
 
 
 # ============================================================
@@ -1108,185 +605,192 @@ def process_article(
 
 def main():
 
-    logger.info(
-        "======================================"
-    )
-
-    logger.info(
-        "MYBUZZ V6 START"
-    )
-
+    logger.info("======================================")
+    logger.info("MYBUZZ V6 START")
     logger.info(
         "Groq model: %s",
         GROQ_MODEL
     )
+    logger.info("======================================")
+
+    posted = load_posted()
+
+    posted_set = set(posted)
+
+    # --------------------------------------------------------
+    # FETCH ALL RSS
+    # --------------------------------------------------------
+
+    all_articles = []
+
+    for source in RSS_SOURCES:
+        articles = fetch_rss(source)
+        all_articles.extend(articles)
 
     logger.info(
-        "Maximum articles per run: %s",
-        MAX_ARTICLES
+        "Total RSS articles: %s",
+        len(all_articles)
     )
 
-    logger.info(
-        "======================================"
-    )
-
-
     # --------------------------------------------------------
-    # Get RSS
-    # --------------------------------------------------------
-
-    articles = get_all_articles()
-
-
-    if not articles:
-
-        logger.warning(
-            "No RSS articles found."
-        )
-
-        return
-
-
-    # --------------------------------------------------------
-    # Remove duplicates
+    # DUPLICATE FILTER
     # --------------------------------------------------------
 
     new_articles = []
 
+    for article in all_articles:
 
-    for article in articles:
+        aid = article_id(article)
 
-        aid = make_article_id(
-
-            article["title"],
-
-            article["link"]
-
-        )
-
-
-        if aid in SEEN:
-
+        if aid in posted_set:
             continue
 
-
-        article["_id"] = aid
-
-        new_articles.append(
-            article
-        )
-
+        new_articles.append(article)
 
     logger.info(
         "New articles after duplicate filter: %s",
         len(new_articles)
     )
 
-
     # --------------------------------------------------------
-    # IMPORTANT:
-    # ONLY ONE ARTICLE
+    # ONE ARTICLE ONLY
     # --------------------------------------------------------
 
-    selected = new_articles[
-        :MAX_ARTICLES
-    ]
-
-
-    logger.info(
-        "Selected %s article(s).",
-        len(selected)
-    )
-
-
-    if not selected:
+    if not new_articles:
+        logger.info(
+            "No new articles."
+        )
 
         logger.info(
-            "No new article to send."
+            "MYBUZZ V6 FINISHED | Sent: 0"
         )
 
         return
 
+    selected = new_articles[:MAX_ARTICLES]
+
+    logger.info(
+        "Selected %s article.",
+        len(selected)
+    )
 
     sent_count = 0
 
-
     # --------------------------------------------------------
-    # Process
+    # PROCESS
     # --------------------------------------------------------
 
     for index, article in enumerate(
-
         selected,
-
         start=1
-
     ):
 
         logger.info(
-
-            "[%s/%s] Processing: %s",
-
+            "[%s/1] Processing: %s",
             index,
-
-            len(selected),
-
             article["title"]
-
         )
 
+        # ----------------------------------------------------
+        # IMAGE
+        # ----------------------------------------------------
 
-        success = process_article(
-            article
+        image_url = article.get("image")
+
+        if not image_url:
+            logger.info(
+                "RSS has no image. Trying news page..."
+            )
+
+            image_url = find_image_from_page(
+                article["link"]
+            )
+
+        article["image"] = image_url
+
+        if image_url:
+            logger.info(
+                "Image found: %s",
+                image_url
+            )
+        else:
+            logger.warning(
+                "No image found. Will send text."
+            )
+
+        # ----------------------------------------------------
+        # AI
+        # ----------------------------------------------------
+
+        ai = generate_translation(article)
+
+        if not ai:
+            logger.warning(
+                "Skipping article because AI processing failed."
+            )
+            continue
+
+        caption = build_caption(
+            article,
+            ai
         )
 
+        # ----------------------------------------------------
+        # TELEGRAM
+        # ----------------------------------------------------
 
-        # IMPORTANT:
-        # Only mark as seen AFTER successful Telegram send
+        if image_url:
+            success = send_photo(
+                image_url,
+                caption
+            )
+
+            # If Telegram rejects image, fallback to message
+            if not success:
+                logger.warning(
+                    "Photo failed. Trying text message..."
+                )
+
+                success = send_message(
+                    caption
+                )
+
+        else:
+            success = send_message(
+                caption
+            )
+
+        # ----------------------------------------------------
+        # SAVE ONLY AFTER SUCCESS
+        # ----------------------------------------------------
+
         if success:
 
-            SEEN.add(
-                article["_id"]
-            )
+            aid = article_id(article)
 
-            save_seen(
-                SEEN
-            )
+            posted.append(aid)
+
+            save_posted(posted)
 
             sent_count += 1
 
-
             logger.info(
-                "News sent successfully."
+                "Article marked as posted."
             )
 
         else:
-
-            logger.warning(
-                "News was NOT sent."
+            logger.error(
+                "Telegram send failed. "
+                "Article will NOT be marked as posted."
             )
 
-
-        time.sleep(2)
-
-
-    logger.info(
-        "======================================"
-    )
-
+    logger.info("======================================")
     logger.info(
         "MYBUZZ V6 FINISHED | Sent: %s",
         sent_count
     )
+    logger.info("======================================")
 
-    logger.info(
-        "======================================"
-    )
-
-
-# ============================================================
-# START
-# ============================================================
 
 if __name__ == "__main__":
     main()

@@ -1,118 +1,47 @@
-name: MYBUZZ News Bot
+name: MYBUZZ V6 News Bot
 
 on:
   workflow_dispatch:
 
   schedule:
-    # Every 2 hours
-    # UTC
-    #
-    # Cambodia / Malaysia = UTC+7
-    #
-    # Example:
-    # 00:17 UTC = 07:17 MY/Cambodia
-    # 02:17 UTC = 09:17
-    # 04:17 UTC = 11:17
-    # 06:17 UTC = 13:17
-    # etc.
-    - cron: "17 */2 * * *"
-
-
-permissions:
-  contents: write
-
+    # Every 3 hours
+    # UTC time
+    - cron: "0 */3 * * *"
 
 jobs:
-
-  run-bot:
+  news-bot:
 
     runs-on: ubuntu-latest
 
     timeout-minutes: 10
 
-
     steps:
 
-      # ==========================================
-      # CHECKOUT
-      # ==========================================
-
       - name: Checkout repository
-
         uses: actions/checkout@v4
 
-
-      # ==========================================
-      # PYTHON
-      # ==========================================
-
       - name: Setup Python
-
         uses: actions/setup-python@v5
-
         with:
-
-          python-version: "3.11"
-
-
-      # ==========================================
-      # INSTALL
-      # ==========================================
+          python-version: "3.12"
+          cache: "pip"
 
       - name: Install dependencies
-
         run: |
-
           python -m pip install --upgrade pip
-
-          python -m pip install -r requirements.txt
-
-
-      # ==========================================
-      # RUN BOT
-      # ==========================================
+          pip install -r requirements.txt
 
       - name: Run MYBUZZ V6
-
         env:
-
-          GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
-
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
-          MYBUZZ_PUBLISH_COUNT: "8"
+          GROQ_MODEL: "llama-3.1-8b-instant"
 
-          MYBUZZ_LOOKBACK_HOURS: "30"
-
-          GEMINI_MODEL: "gemini-2.5-flash"
-
-          MYBUZZ_DRY_RUN: "false"
-
-        run: |
-
-          python mybuzz_news_bot.py
-
-
-      # ==========================================
-      # SAVE DATABASE
-      # ==========================================
-
-      - name: Save news database
-
-        if: always()
+          MAX_NEWS: "5"
+          MAX_AGE_HOURS: "24"
+          REQUEST_TIMEOUT: "20"
 
         run: |
-
-          git config user.name "MYBUZZ Bot"
-
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add mybuzz.db || true
-
-          git diff --cached --quiet || git commit -m "chore: update MYBUZZ news database"
-
-          git push || true
+          python main.py

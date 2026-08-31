@@ -1,14 +1,16 @@
 name: MYBUZZ News Bot
 
 on:
-  schedule:
-    - cron: "30 1 * * *"
-
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
 
 jobs:
   news-bot:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -27,11 +29,8 @@ jobs:
 
       - name: Run MYBUZZ News Bot
         env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GROQ_MODEL: openai/gpt-oss-20b
-          MAX_NEWS: "5"
-          MAX_AGE_HOURS: "24"
         run: |
           python mybuzz_news_bot.py

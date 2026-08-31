@@ -1,372 +1,191 @@
 import os
 import re
-import time
 import json
-import html
-import sqlite3
+import time
 import hashlib
-from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+import logging
+import html
+from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 
+import feedparser
 import requests
-from google import genai
-from google.genai import types
+from groq import Groq
 
 
 # ============================================================
-# MYBUZZ NEWS BOT V6
+# MYBUZZ V6
+# Malaysia News Telegram Bot
 # ============================================================
 
-print("=" * 40)
-print("MYBUZZ NEWS BOT V6")
-print("=" * 40)
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+
+# Groq model
+GROQ_MODEL = os.getenv(
+    "GROQ_MODEL",
+    "llama-3.1-8b-instant"
+).strip()
+
+# Maximum news per run
+MAX_NEWS = int(os.getenv("MAX_NEWS", "5"))
+
+# How old a news item can be
+MAX_AGE_HOURS = int(os.getenv("MAX_AGE_HOURS", "24"))
+
+# Request timeout
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
+
+# State file
+STATE_FILE = "posted.json"
+
+# Malaysia timezone
+MY_TZ = timezone(timedelta(hours=8))
 
 
 # ============================================================
-# ENV
+# LOGGING
 # ============================================================
 
-GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-2.5-flash"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-PUBLISH_COUNT = int(
-    os.getenv("MYBUZZ_PUBLISH_COUNT", "8")
-)
-
-LOOKBACK_HOURS = int(
-    os.getenv("MYBUZZ_LOOKBACK_HOURS", "30")
-)
-
-DRY_RUN = os.getenv(
-    "MYBUZZ_DRY_RUN",
-    "false"
-).lower() == "true"
-
-DB_PATH = "mybuzz.db"
+logger = logging.getLogger("MYBUZZ-V6")
 
 
 # ============================================================
-# CATEGORY RATIO
-#
-# 8 POSTS:
-# News          3
-# Viral         2
-# Entertainment 1
-# Food          1
-# Tech          1
-#
-# = 40 / 25 / 15 / 10 / 10 approximately
+# RSS SOURCES
 # ============================================================
 
-TARGETS = {
-    "news": 0.40,
-    "viral": 0.25,
-    "entertainment": 0.15,
-    "food": 0.10,
-    "tech": 0.10,
-}
-
-
-CATEGORY_LABELS = {
-    "news": "📰 NEWS",
-    "viral": "🔥 VIRAL",
-    "entertainment": "🎬 ENTERTAINMENT",
-    "food": "🍜 FOOD / LIFESTYLE",
-    "tech": "📱 TECH / GADGET",
-}
-
-
-# ============================================================
-# GNEWS SEARCH QUERIES
-# ============================================================
-
-QUERIES = {
-
-    "news": [
-        "Malaysia government",
-        "Malaysia politics",
-        "Malaysia economy",
-        "Malaysia crime",
-        "Malaysia education",
-        "Malaysia latest news",
-    ],
-
-    "viral": [
-        "Malaysia viral",
-        "Malaysia trending",
-        "Malaysia netizens",
-        "Malaysia tular",
-        "Malaysia social media",
-    ],
-
-    "entertainment": [
-        "Malaysia entertainment",
-        "Malaysia celebrity",
-        "Malaysia singer",
-        "Malaysia actor",
-        "Malaysia K-pop",
-        "Malaysia concert",
-        "Malaysia movie",
-    ],
-
-    "food": [
-        "Malaysia food",
-        "Malaysia restaurant",
-        "Malaysia cafe",
-        "Malaysia new restaurant",
-        "Malaysia food trend",
-        "Malaysia lifestyle",
-    ],
-
-    "tech": [
-        "Malaysia technology",
-        "Malaysia gadget",
-        "Malaysia smartphone",
-        "Malaysia AI",
-        "Malaysia Apple",
-        "Malaysia Android",
-        "Malaysia tech",
-    ],
-}
-
-
-# ============================================================
-# KEYWORDS
-# ============================================================
-
-KEYWORDS = {
-
-    "viral": [
-        "viral",
-        "trending",
-        "netizen",
-        "tular",
-        "sensasi",
-        "social media",
-        "bizarre",
-        "popular",
-    ],
-
-    "entertainment": [
-        "entertainment",
-        "celebrity",
-        "singer",
-        "actor",
-        "actress",
-        "k-pop",
-        "concert",
-        "movie",
-        "music",
-        "showbiz",
-        "drama",
-    ],
-
-    "food": [
-        "food",
-        "restaurant",
-        "cafe",
-        "donut",
-        "dessert",
-        "chef",
-        "dining",
-        "travel",
-        "lifestyle",
-    ],
-
-    "tech": [
-        "technology",
-        "tech",
-        "gadget",
-        "iphone",
-        "android",
-        "ai",
-        "artificial intelligence",
-        "smartphone",
-        "telco",
-        "software",
-    ],
-}
-
-
-# ============================================================
-# CHECK ENV
-# ============================================================
-
-required = {
-    "GNEWS_API_KEY": GNEWS_API_KEY,
-    "GEMINI_API_KEY": GEMINI_API_KEY,
-    "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
-    "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
-}
-
-missing = [
-    name
-    for name, value in required.items()
-    if not value
+RSS_FEEDS = [
+    {
+        "name": "Malay Mail",
+        "url": "https://www.malaymail.com/feed/rss/malaysia",
+    },
+    {
+        "name": "The Star",
+        "url": "https://www.thestar.com.my/rss/News",
+    },
+    {
+        "name": "New Straits Times",
+        "url": "https://www.nst.com.my/feed",
+    },
+    {
+        "name": "The Edge Malaysia",
+        "url": "https://theedgemalaysia.com/rss.xml",
+    },
+    {
+        "name": "Bernama",
+        "url": "https://bernama.com/en/rss/news.php",
+    },
 ]
 
-if missing:
-    raise SystemExit(
-        "Missing GitHub Secrets: "
-        + ", ".join(missing)
-    )
-
-print("GNews API: OK")
-print("Gemini API: OK")
-print("Telegram: OK")
-
 
 # ============================================================
-# DATABASE
+# BASIC VALIDATION
 # ============================================================
 
-def get_database():
+def validate_config():
+    missing = []
 
-    conn = sqlite3.connect(DB_PATH)
+    if not BOT_TOKEN:
+        missing.append("TELEGRAM_BOT_TOKEN")
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS seen (
-            article_key TEXT PRIMARY KEY,
-            url TEXT,
-            title TEXT,
-            published_at TEXT,
-            category TEXT,
-            posted_at TEXT
+    if not CHAT_ID:
+        missing.append("TELEGRAM_CHAT_ID")
+
+    if not GROQ_API_KEY:
+        missing.append("GROQ_API_KEY")
+
+    if missing:
+        logger.error(
+            "Missing GitHub Secrets: %s",
+            ", ".join(missing)
         )
-    """)
-
-    conn.commit()
-
-    return conn
-
-
-# ============================================================
-# HTTP JSON
-# ============================================================
-
-def get_json(url, params):
-
-    full_url = (
-        url
-        + "?"
-        + urlencode(params)
-    )
-
-    for attempt in range(3):
-
-        try:
-
-            request = Request(
-                full_url,
-                headers={
-                    "User-Agent":
-                    "MYBUZZ-NewsBot/6.0"
-                }
-            )
-
-            with urlopen(
-                request,
-                timeout=25
-            ) as response:
-
-                return json.loads(
-                    response
-                    .read()
-                    .decode("utf-8")
-                )
-
-        except Exception as error:
-
-            print(
-                f"[WARN] HTTP attempt "
-                f"{attempt + 1}/3: {error}"
-            )
-
-            if attempt < 2:
-                time.sleep(
-                    2 ** attempt
-                )
-
-    return {}
-
-
-# ============================================================
-# FETCH GNEWS
-# ============================================================
-
-def fetch_category(category):
-
-    since = (
-        datetime.now(timezone.utc)
-        - timedelta(
-            hours=LOOKBACK_HOURS
+        raise RuntimeError(
+            "Missing required environment variables: "
+            + ", ".join(missing)
         )
-    ).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
 
-    articles = []
 
-    for query in QUERIES[category]:
+# ============================================================
+# STATE
+# ============================================================
 
-        params = {
-            "q": query,
-            "lang": "en",
-            "country": "my",
-            "max": 10,
-            "sortby": "publishedAt",
-            "from": since,
-            "apikey": GNEWS_API_KEY,
+def load_state():
+    if not os.path.exists(STATE_FILE):
+        return {
+            "posted_urls": [],
+            "posted_hashes": []
         }
 
-        print(
-            f"Fetching [{category}] "
-            f"{query}"
+    try:
+        with open(
+            STATE_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            return {
+                "posted_urls": [],
+                "posted_hashes": []
+            }
+
+        data.setdefault("posted_urls", [])
+        data.setdefault("posted_hashes", [])
+
+        return data
+
+    except Exception as e:
+        logger.warning(
+            "Could not read state file: %s",
+            e
         )
 
-        try:
+        return {
+            "posted_urls": [],
+            "posted_hashes": []
+        }
 
-            data = get_json(
-                "https://gnews.io/api/v4/search",
-                params
-            )
 
-            for article in data.get(
-                "articles",
-                []
-            ):
+def save_state(state):
+    # Keep state small
+    state["posted_urls"] = state["posted_urls"][-500:]
+    state["posted_hashes"] = state["posted_hashes"][-500:]
 
-                article[
-                    "_requested_category"
-                ] = category
-
-                articles.append(article)
-
-        except Exception as error:
-
-            print(
-                "[WARN] GNews error:",
-                error
-            )
-
-    return articles
+    with open(
+        STATE_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+        json.dump(
+            state,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
 
 
 # ============================================================
-# NORMALIZE
+# TEXT HELPERS
 # ============================================================
 
-def normalize(text):
+def clean_text(text):
+    if not text:
+        return ""
 
-    text = (text or "").lower()
+    text = html.unescape(text)
+
+    text = re.sub(
+        r"<[^>]+>",
+        " ",
+        text
+    )
 
     text = re.sub(
         r"\s+",
@@ -374,745 +193,522 @@ def normalize(text):
         text
     )
 
-    text = re.sub(
-        r"[^a-z0-9 ]",
-        "",
-        text
-    )
-
     return text.strip()
 
 
-# ============================================================
-# ARTICLE HASH
-# ============================================================
+def normalize_url(url):
+    if not url:
+        return ""
 
-def article_key(article):
+    url = url.strip()
 
-    url = (
-        article.get("url")
-        or ""
-    ).strip()
-
-    title = normalize(
-        article.get("title")
+    # Remove common tracking parameters
+    url = re.sub(
+        r"[?&](utm_[^&]+|fbclid|gclid)=[^&]+",
+        "",
+        url,
+        flags=re.IGNORECASE
     )
 
-    source = url or title
+    return url.rstrip("?")
+
+
+def article_hash(title):
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        title.lower().strip()
+    )
 
     return hashlib.sha256(
-        source.encode("utf-8")
+        normalized.encode("utf-8")
     ).hexdigest()
 
 
 # ============================================================
-# SIMILAR TITLE KEY
+# DATE
 # ============================================================
 
-def title_key(article):
-
-    words = [
-        word
-        for word in normalize(
-            article.get("title")
-        ).split()
-        if len(word) > 3
+def parse_entry_date(entry):
+    candidates = [
+        entry.get("published"),
+        entry.get("updated"),
+        entry.get("created"),
     ]
 
-    return " ".join(
-        sorted(words[:12])
+    for value in candidates:
+        if not value:
+            continue
+
+        try:
+            dt = parsedate_to_datetime(value)
+
+            if dt.tzinfo is None:
+                dt = dt.replace(
+                    tzinfo=timezone.utc
+                )
+
+            return dt.astimezone(MY_TZ)
+
+        except Exception:
+            pass
+
+    return datetime.now(MY_TZ)
+
+
+def is_recent(dt):
+    now = datetime.now(MY_TZ)
+
+    age = now - dt
+
+    return age.total_seconds() <= MAX_AGE_HOURS * 3600
+
+
+# ============================================================
+# RSS
+# ============================================================
+
+def fetch_feed(source):
+    logger.info(
+        "Fetching RSS: %s",
+        source["name"]
     )
 
+    try:
+        response = requests.get(
+            source["url"],
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "User-Agent":
+                    "MYBUZZ-NewsBot/6.0"
+            }
+        )
+
+        response.raise_for_status()
+
+        feed = feedparser.parse(
+            response.content
+        )
+
+        results = []
+
+        for entry in feed.entries:
+
+            title = clean_text(
+                entry.get("title", "")
+            )
+
+            summary = clean_text(
+                entry.get(
+                    "summary",
+                    entry.get(
+                        "description",
+                        ""
+                    )
+                )
+            )
+
+            link = normalize_url(
+                entry.get("link", "")
+            )
+
+            if not title or not link:
+                continue
+
+            published_at = parse_entry_date(
+                entry
+            )
+
+            if not is_recent(
+                published_at
+            ):
+                continue
+
+            results.append({
+                "source": source["name"],
+                "title": title,
+                "summary": summary,
+                "url": link,
+                "published_at": published_at.isoformat(),
+            })
+
+        logger.info(
+            "%s: %d recent articles",
+            source["name"],
+            len(results)
+        )
+
+        return results
+
+    except Exception as e:
+        logger.warning(
+            "RSS failed [%s]: %s",
+            source["name"],
+            e
+        )
+
+        return []
+
+
+def collect_news():
+    all_news = []
+
+    for source in RSS_FEEDS:
+        articles = fetch_feed(source)
+        all_news.extend(articles)
+
+    return all_news
+
 
 # ============================================================
-# DEDUPLICATE
+# DUPLICATE FILTER
 # ============================================================
 
-def deduplicate(articles):
+def filter_duplicates(news, state):
+    seen_urls = set(
+        state.get("posted_urls", [])
+    )
 
-    seen_urls = set()
-    seen_titles = set()
+    seen_hashes = set(
+        state.get("posted_hashes", [])
+    )
 
-    result = []
+    unique = []
 
-    articles.sort(
-        key=lambda x:
-        x.get(
-            "publishedAt",
+    local_urls = set()
+    local_hashes = set()
+
+    for article in news:
+
+        url = article["url"]
+
+        h = article_hash(
+            article["title"]
+        )
+
+        if url in seen_urls:
+            continue
+
+        if h in seen_hashes:
+            continue
+
+        if url in local_urls:
+            continue
+
+        if h in local_hashes:
+            continue
+
+        local_urls.add(url)
+        local_hashes.add(h)
+
+        article["hash"] = h
+
+        unique.append(article)
+
+    return unique
+
+
+# ============================================================
+# SORT NEWS
+# ============================================================
+
+def sort_news(news):
+    return sorted(
+        news,
+        key=lambda x: x.get(
+            "published_at",
             ""
         ),
         reverse=True
     )
 
-    for article in articles:
-
-        url_hash = article_key(
-            article
-        )
-
-        title_hash = title_key(
-            article
-        )
-
-        if url_hash in seen_urls:
-            continue
-
-        if (
-            title_hash
-            and title_hash in seen_titles
-        ):
-            continue
-
-        seen_urls.add(
-            url_hash
-        )
-
-        if title_hash:
-            seen_titles.add(
-                title_hash
-            )
-
-        result.append(
-            article
-        )
-
-    return result
-
 
 # ============================================================
-# CATEGORY CLASSIFICATION
+# GROQ
 # ============================================================
 
-def classify(article):
-
-    text = (
-        (article.get("title") or "")
-        + " "
-        + (article.get("description") or "")
-    ).lower()
-
-    scores = {
-        category: 0
-        for category in TARGETS
-    }
-
-    requested = article.get(
-        "_requested_category",
-        "news"
-    )
-
-    scores[requested] += 3
-
-    for category, words in KEYWORDS.items():
-
-        for word in words:
-
-            if word in text:
-                scores[category] += 1
-
-    return max(
-        scores,
-        key=scores.get
+def get_groq_client():
+    return Groq(
+        api_key=GROQ_API_KEY
     )
 
 
-# ============================================================
-# BALANCED SELECTION
-# ============================================================
-
-def select_balanced(
-    articles,
-    total
-):
-
-    for article in articles:
-
-        article["_category"] = (
-            classify(article)
-        )
-
-    quotas = {
-        category:
-        int(total * ratio)
-        for category, ratio
-        in TARGETS.items()
-    }
-
-    remainder = (
-        total
-        - sum(quotas.values())
-    )
-
-    fractions = sorted(
-        (
-            (
-                total * ratio
-                - int(total * ratio),
-                category
-            )
-            for category, ratio
-            in TARGETS.items()
-        ),
-        reverse=True
-    )
-
-    for _, category in fractions[
-        :remainder
-    ]:
-
-        quotas[category] += 1
-
-    print(
-        "Target distribution:",
-        quotas
-    )
-
-    groups = {
-        category: []
-        for category in TARGETS
-    }
-
-    for article in articles:
-
-        groups[
-            article["_category"]
-        ].append(article)
-
-    for group in groups.values():
-
-        group.sort(
-            key=lambda x:
-            x.get(
-                "publishedAt",
-                ""
-            ),
-            reverse=True
-        )
-
-    selected = []
-    used = set()
-
-    # First fill the target categories
-    for category, quota in quotas.items():
-
-        count = 0
-
-        for article in groups[category]:
-
-            key = article_key(
-                article
-            )
-
-            if key in used:
-                continue
-
-            selected.append(
-                article
-            )
-
-            used.add(key)
-
-            count += 1
-
-            if count >= quota:
-                break
-
-    # Fill any missing slots
-    if len(selected) < total:
-
-        remaining = [
-            article
-            for article in articles
-            if article_key(article)
-            not in used
-        ]
-
-        remaining.sort(
-            key=lambda x:
-            x.get(
-                "publishedAt",
-                ""
-            ),
-            reverse=True
-        )
-
-        selected.extend(
-            remaining[
-                :total - len(selected)
-            ]
-        )
-
-    return selected[:total]
-
-
-# ============================================================
-# GEMINI
-# ============================================================
-
-def generate_translation(
-    client,
-    article
-):
-
-    source = (
-        article.get(
-            "source",
-            {}
-        )
-        or {}
-    ).get(
-        "name",
-        ""
-    )
-
-    prompt = f"""
-You are the editor of MYBUZZ,
-a Malaysia-focused Telegram channel.
-
-Create a short bilingual post
-from the source article.
-
-Return ONLY valid JSON:
-
-{{
-  "title_zh": "",
-  "summary_zh": "",
-  "title_ms": "",
-  "summary_ms": "",
-  "category": ""
-}}
-
-category MUST be one of:
-news
-viral
-entertainment
-food
-tech
-
-RULES:
-
-1. Chinese = natural Simplified Chinese.
-2. Malay = natural Malaysian Bahasa Melayu.
-3. Do not invent information.
-4. Keep names accurate.
-5. Keep numbers accurate.
-6. Keep dates accurate.
-7. Keep locations accurate.
-8. Summary = maximum 2 short sentences.
-9. Do not copy long sentences.
-10. Sensitive news must be neutral.
-11. Make the headline attractive but factual.
-12. Do not put emojis inside the title.
-13. Category must match the actual article.
-
-SOURCE:
-Publisher: {source}
-
-Title:
-{article.get("title", "")}
-
-Description:
-{article.get("description", "")}
-
-URL:
-{article.get("url", "")}
-"""
-
-    retry_delays = [
-        5,
-        15,
-        30,
-        60
-    ]
-
-    for attempt in range(4):
-
-        try:
-
-            print(
-                f"Gemini attempt "
-                f"{attempt + 1}/4..."
-            )
-
-            response = (
-                client
-                .models
-                .generate_content(
-                    model=GEMINI_MODEL,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.2,
-                        response_mime_type="application/json",
-                    ),
-                )
-            )
-
-            if not response.text:
-
-                raise RuntimeError(
-                    "Gemini returned empty response"
-                )
-
-            result = json.loads(
-                response.text
-            )
-
-            if (
-                result.get("category")
-                not in TARGETS
-            ):
-
-                result["category"] = (
-                    article.get(
-                        "_category",
-                        "news"
-                    )
-                )
-
-            return result
-
-        except Exception as error:
-
-            print(
-                f"[WARN] Gemini error: "
-                f"{error}"
-            )
-
-            if attempt < 3:
-
-                print(
-                    f"Retrying in "
-                    f"{retry_delays[attempt]}"
-                    f" seconds..."
-                )
-
-                time.sleep(
-                    retry_delays[attempt]
-                )
-
-    return None
-
-
-# ============================================================
-# IMAGE VALIDATION
-# ============================================================
-
-def valid_image(url):
-
-    if not url:
-        return False
-
-    if not url.startswith(
-        ("http://", "https://")
-    ):
-        return False
-
-    lowered = url.lower()
-
-    # Prevent logos being used
-    # as article images.
-    blocked = [
-        "logo",
-        "favicon",
-        "placeholder",
-        "default-image",
-        "default_image",
-        "avatar",
-    ]
-
-    for word in blocked:
-
-        if word in lowered:
-
-            print(
-                "Image rejected:",
-                word
-            )
-
-            return False
+def groq_generate(prompt):
+    client = get_groq_client()
 
     try:
-
-        response = requests.get(
-            url,
-            stream=True,
-            timeout=10,
-            headers={
-                "User-Agent":
-                "MYBUZZ-NewsBot/6.0"
-            }
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are MYBUZZ Malaysia news editor. "
+                        "Be accurate, concise and neutral. "
+                        "Never invent facts."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.2,
+            max_tokens=1200,
         )
 
-        content_type = (
-            response
-            .headers
-            .get(
-                "content-type",
-                ""
-            )
-            .lower()
+        if not response.choices:
+            return ""
+
+        content = (
+            response.choices[0]
+            .message
+            .content
         )
 
-        if response.status_code != 200:
-            return False
+        if not content:
+            return ""
 
-        if "image/" not in content_type:
-            return False
+        return content.strip()
 
-        return True
+    except Exception as e:
+        logger.error(
+            "Groq API failed: %s",
+            e
+        )
+
+        # V6 intentionally does NOT keep retrying.
+        return ""
+
+
+# ============================================================
+# AI NEWS PROCESSING
+# ============================================================
+
+def process_article(article):
+
+    title = article["title"]
+    summary = article["summary"]
+    source = article["source"]
+
+    prompt = f"""
+Create MYBUZZ content from the following Malaysian news article.
+
+SOURCE:
+{source}
+
+TITLE:
+{title}
+
+SUMMARY:
+{summary}
+
+Return EXACTLY this JSON structure:
+
+{{
+  "title_en": "...",
+  "title_ms": "...",
+  "title_zh": "...",
+  "summary_en": "...",
+  "summary_ms": "...",
+  "summary_zh": "..."
+}}
+
+Rules:
+
+1. Do not invent facts.
+2. Keep the headline short.
+3. English must sound natural.
+4. Bahasa Melayu must sound natural for Malaysia.
+5. Chinese must be simplified Chinese.
+6. Summary should be 1-2 short sentences.
+7. Do not add emojis.
+8. Do not include URLs.
+9. Do not use markdown.
+"""
+
+    result = groq_generate(
+        prompt
+    )
+
+    if not result:
+        return None
+
+    # Remove markdown fences if model adds them
+    result = re.sub(
+        r"^```json\s*",
+        "",
+        result,
+        flags=re.IGNORECASE
+    )
+
+    result = re.sub(
+        r"\s*```$",
+        "",
+        result
+    )
+
+    try:
+        data = json.loads(result)
 
     except Exception:
+        logger.warning(
+            "Invalid Groq JSON for: %s",
+            title
+        )
+        return None
 
-        return False
+    required = [
+        "title_en",
+        "title_ms",
+        "title_zh",
+        "summary_en",
+        "summary_ms",
+        "summary_zh",
+    ]
+
+    for key in required:
+        if not data.get(key):
+            logger.warning(
+                "Missing AI field: %s",
+                key
+            )
+            return None
+
+    return data
 
 
 # ============================================================
 # TELEGRAM
 # ============================================================
 
-def telegram_request(
-    method,
-    data
-):
-
-    url = (
-        "https://api.telegram.org/"
-        f"bot{TELEGRAM_BOT_TOKEN}/"
-        f"{method}"
+def telegram_url():
+    return (
+        f"https://api.telegram.org/bot"
+        f"{BOT_TOKEN}"
+        f"/sendMessage"
     )
 
-    for attempt in range(3):
 
-        try:
+def send_telegram(message):
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False,
+    }
 
-            response = requests.post(
-                url,
-                data=data,
-                timeout=30
+    try:
+        response = requests.post(
+            telegram_url(),
+            json=payload,
+            timeout=REQUEST_TIMEOUT
+        )
+
+        if response.status_code != 200:
+            logger.error(
+                "Telegram failed: %s %s",
+                response.status_code,
+                response.text[:500]
             )
 
-            if response.ok:
+            return False
 
-                result = (
-                    response
-                    .json()
-                )
+        data = response.json()
 
-                if result.get("ok"):
-
-                    return True
-
-                print(
-                    "[WARN] Telegram:",
-                    result
-                )
-
-            else:
-
-                print(
-                    "[WARN] Telegram HTTP:",
-                    response.status_code,
-                    response.text[:300]
-                )
-
-        except Exception as error:
-
-            print(
-                "[WARN] Telegram error:",
-                error
+        if not data.get("ok"):
+            logger.error(
+                "Telegram API error: %s",
+                data
             )
-
-        if attempt < 2:
-
-            time.sleep(
-                2 ** attempt
-            )
-
-    return False
-
-
-# ============================================================
-# BUILD TELEGRAM POST
-# ============================================================
-
-def build_message(
-    article,
-    translated
-):
-
-    category = translated.get(
-        "category",
-        article.get(
-            "_category",
-            "news"
-        )
-    )
-
-    label = CATEGORY_LABELS.get(
-        category,
-        CATEGORY_LABELS["news"]
-    )
-
-    title_zh = html.escape(
-        translated.get(
-            "title_zh",
-            ""
-        )
-    )
-
-    summary_zh = html.escape(
-        translated.get(
-            "summary_zh",
-            ""
-        )
-    )
-
-    title_ms = html.escape(
-        translated.get(
-            "title_ms",
-            ""
-        )
-    )
-
-    summary_ms = html.escape(
-        translated.get(
-            "summary_ms",
-            ""
-        )
-    )
-
-    url = article.get(
-        "url",
-        ""
-    )
-
-    safe_url = html.escape(
-        url,
-        quote=True
-    )
-
-    source = html.escape(
-        (
-            article.get(
-                "source",
-                {}
-            )
-            or {}
-        ).get(
-            "name",
-            "Source"
-        )
-    )
-
-    message = (
-        f"<b>{label}｜"
-        f"{title_zh}</b>\n\n"
-
-        f"🇨🇳 {summary_zh}\n\n"
-
-        f"<b>🇲🇾 "
-        f"{title_ms}</b>\n\n"
-
-        f"{summary_ms}\n\n"
-
-        f"👉 <b>"
-        f"<a href=\"{safe_url}\">"
-        f"点击阅读完整新闻"
-        f"</a>"
-        f"</b>\n"
-
-        f"👉 <b>"
-        f"<a href=\"{safe_url}\">"
-        f"Klik untuk baca berita penuh"
-        f"</a>"
-        f"</b>\n\n"
-
-        f"🔗 {source}"
-    )
-
-    return message
-
-
-# ============================================================
-# PUBLISH
-# ============================================================
-
-def publish_article(
-    article,
-    translated
-):
-
-    message = build_message(
-        article,
-        translated
-    )
-
-    if DRY_RUN:
-
-        print("\n")
-        print("=" * 70)
-        print(message)
-        print("=" * 70)
-        print("\n")
+            return False
 
         return True
 
-    image = article.get(
-        "image"
-    )
-
-    # IMPORTANT:
-    # Never use obvious logos.
-    if valid_image(image):
-
-        print(
-            "Sending article image..."
+    except Exception as e:
+        logger.error(
+            "Telegram request failed: %s",
+            e
         )
 
-        success = telegram_request(
-            "sendPhoto",
-            {
-                "chat_id":
-                    TELEGRAM_CHAT_ID,
+        return False
 
-                "photo":
-                    image,
 
-                "caption":
-                    message,
+# ============================================================
+# MESSAGE FORMAT
+# ============================================================
 
-                "parse_mode":
-                    "HTML",
-            }
-        )
-
-        if success:
-
-            return True
-
-    # If image is missing/bad,
-    # send normal Telegram post.
-    print(
-        "Image unavailable, "
-        "sending text post..."
+def safe_html(text):
+    return html.escape(
+        str(text),
+        quote=False
     )
 
-    return telegram_request(
-        "sendMessage",
-        {
-            "chat_id":
-                TELEGRAM_CHAT_ID,
 
-            "text":
-                message,
-
-            "parse_mode":
-                "HTML",
-
-            "disable_web_page_preview":
-                "false",
-        }
+def build_message(article, ai):
+    source = safe_html(
+        article["source"]
     )
+
+    title_en = safe_html(
+        ai["title_en"]
+    )
+
+    title_ms = safe_html(
+        ai["title_ms"]
+    )
+
+    title_zh = safe_html(
+        ai["title_zh"]
+    )
+
+    summary_en = safe_html(
+        ai["summary_en"]
+    )
+
+    summary_ms = safe_html(
+        ai["summary_ms"]
+    )
+
+    summary_zh = safe_html(
+        ai["summary_zh"]
+    )
+
+    original_url = html.escape(
+        article["url"],
+        quote=True
+    )
+
+    message = f"""
+🇲🇾 <b>MYBUZZ</b>
+
+<b>🇬🇧 {title_en}</b>
+{summary_en}
+
+<b>🇲🇾 {title_ms}</b>
+{summary_ms}
+
+<b>🇨🇳 {title_zh}</b>
+{summary_zh}
+
+━━━━━━━━━━━━━━
+
+🔗 👇 <b>Read the full story / Baca berita penuh / 阅读完整新闻</b>
+
+👉 <a href="{original_url}">{source}｜Full Report / Laporan Penuh / 完整报道</a>
+"""
+
+    return message.strip()
+
+
+# ============================================================
+# TELEGRAM MESSAGE LIMIT
+# ============================================================
+
+def telegram_safe_length(text):
+    # Telegram message max is around 4096 chars.
+    # Keep a safe margin.
+    return len(text) <= 3900
 
 
 # ============================================================
@@ -1121,261 +717,148 @@ def publish_article(
 
 def main():
 
-    print(
-        f"Lookback: "
-        f"{LOOKBACK_HOURS} hours"
+    logger.info(
+        "======================================"
     )
 
-    print(
-        f"Publish count: "
-        f"{PUBLISH_COUNT}"
+    logger.info(
+        "MYBUZZ V6 START"
     )
 
-    # --------------------------------------------------------
-    # FETCH
-    # --------------------------------------------------------
+    logger.info(
+        "======================================"
+    )
 
-    all_articles = []
+    validate_config()
 
-    for category in QUERIES:
+    state = load_state()
 
-        articles = fetch_category(
-            category
+    news = collect_news()
+
+    logger.info(
+        "Total RSS articles: %d",
+        len(news)
+    )
+
+    if not news:
+        logger.info(
+            "No recent news found."
         )
-
-        all_articles.extend(
-            articles
-        )
-
-    print(
-        f"Raw articles: "
-        f"{len(all_articles)}"
-    )
-
-    # --------------------------------------------------------
-    # DEDUPE
-    # --------------------------------------------------------
-
-    all_articles = deduplicate(
-        all_articles
-    )
-
-    print(
-        f"After dedupe: "
-        f"{len(all_articles)}"
-    )
-
-    # --------------------------------------------------------
-    # DATABASE
-    # --------------------------------------------------------
-
-    conn = get_database()
-
-    seen = {
-        row[0]
-        for row in conn.execute(
-            "SELECT article_key FROM seen"
-        )
-    }
-
-    fresh_articles = [
-        article
-        for article in all_articles
-        if article_key(article)
-        not in seen
-    ]
-
-    print(
-        f"Fresh articles: "
-        f"{len(fresh_articles)}"
-    )
-
-    if not fresh_articles:
-
-        print(
-            "No new articles."
-        )
-
-        conn.close()
-
         return
 
-    # --------------------------------------------------------
-    # SELECT BALANCED
-    # --------------------------------------------------------
-
-    selected = select_balanced(
-        fresh_articles,
-        PUBLISH_COUNT
+    news = filter_duplicates(
+        news,
+        state
     )
 
-    print(
-        f"Selected articles: "
-        f"{len(selected)}"
+    news = sort_news(
+        news
     )
 
-    # --------------------------------------------------------
-    # GEMINI
-    # --------------------------------------------------------
-
-    client = genai.Client(
-        api_key=GEMINI_API_KEY
+    logger.info(
+        "New articles after duplicate filter: %d",
+        len(news)
     )
 
-    posted = 0
+    if not news:
+        logger.info(
+            "No new articles."
+        )
+        return
 
-    # --------------------------------------------------------
-    # PUBLISH
-    # --------------------------------------------------------
+    selected = news[:MAX_NEWS]
+
+    logger.info(
+        "Selected %d articles.",
+        len(selected)
+    )
+
+    sent_count = 0
 
     for index, article in enumerate(
         selected,
         start=1
     ):
 
-        print()
-        print(
-            "=" * 60
+        logger.info(
+            "[%d/%d] Processing: %s",
+            index,
+            len(selected),
+            article["title"]
         )
 
-        print(
-            f"[{index}/{len(selected)}]"
+        ai = process_article(
+            article
         )
 
-        print(
-            article.get(
-                "title",
-                ""
+        if not ai:
+            logger.warning(
+                "Skipping article because AI processing failed."
             )
-        )
-
-        print(
-            "Category:",
-            article.get(
-                "_category",
-                "news"
-            )
-        )
-
-        # --------------------------------------------
-        # AI
-        # --------------------------------------------
-
-        translated = (
-            generate_translation(
-                client,
-                article
-            )
-        )
-
-        if not translated:
-
-            print(
-                "Gemini failed after "
-                "all retries."
-            )
-
-            print(
-                "Skipping this article."
-            )
-
             continue
 
-        # Gemini can correct category
-        ai_category = translated.get(
-            "category"
+        message = build_message(
+            article,
+            ai
         )
 
-        if ai_category in TARGETS:
-
-            article["_category"] = (
-                ai_category
+        if not telegram_safe_length(
+            message
+        ):
+            logger.warning(
+                "Message too long. Skipping."
             )
+            continue
 
-        # --------------------------------------------
-        # TELEGRAM
-        # --------------------------------------------
-
-        success = publish_article(
-            article,
-            translated
+        success = send_telegram(
+            message
         )
 
         if success:
 
-            posted += 1
-
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO seen
-                (
-                    article_key,
-                    url,
-                    title,
-                    published_at,
-                    category,
-                    posted_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    article_key(article),
-
-                    article.get(
-                        "url",
-                        ""
-                    ),
-
-                    article.get(
-                        "title",
-                        ""
-                    ),
-
-                    article.get(
-                        "publishedAt",
-                        ""
-                    ),
-
-                    article.get(
-                        "_category",
-                        "news"
-                    ),
-
-                    datetime.now(
-                        timezone.utc
-                    ).isoformat(),
-                )
+            state["posted_urls"].append(
+                article["url"]
             )
 
-            conn.commit()
-
-            print(
-                "Telegram: POSTED"
+            state["posted_hashes"].append(
+                article["hash"]
             )
+
+            save_state(
+                state
+            )
+
+            sent_count += 1
+
+            logger.info(
+                "Telegram sent successfully."
+            )
+
+            # Avoid sending too fast
+            time.sleep(2)
 
         else:
-
-            print(
-                "Telegram: FAILED"
+            logger.error(
+                "Telegram send failed."
             )
 
-        # Don't spam Telegram/API
-        time.sleep(3)
-
-    conn.close()
-
-    print()
-    print("=" * 40)
-    print(
-        f"DONE | "
-        f"Posted {posted}/{len(selected)}"
+    save_state(
+        state
     )
-    print("=" * 40)
 
+    logger.info(
+        "======================================"
+    )
 
-# ============================================================
-# START
-# ============================================================
+    logger.info(
+        "MYBUZZ V6 FINISHED | Sent: %d",
+        sent_count
+    )
+
+    logger.info(
+        "======================================"
+    )
+
 
 if __name__ == "__main__":
     main()

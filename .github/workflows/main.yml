@@ -1,22 +1,18 @@
-name: MYBUZZ V6 News Bot
+name: MYBUZZ News Bot
 
 on:
   workflow_dispatch:
 
   schedule:
-    # Every 3 hours
-    # UTC time
     - cron: "0 */3 * * *"
 
 jobs:
   news-bot:
-
     runs-on: ubuntu-latest
 
     timeout-minutes: 10
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -31,17 +27,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run MYBUZZ V6
+      - name: Run MYBUZZ News Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
-          GROQ_MODEL: "llama-3.1-8b-instant"
-
-          MAX_NEWS: "5"
-          MAX_AGE_HOURS: "24"
-          REQUEST_TIMEOUT: "20"
-
         run: |
-          python main.py
+          python mybuzz_news_bot.py

@@ -1,765 +1,1381 @@
 import os
+import re
+import time
+import json
+import html
 import sqlite3
 import hashlib
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
 import requests
-import html
-import json
-
-from datetime import datetime, timezone
 from google import genai
+from google.genai import types
 
 
-# =========================================================
-# MYBUZZ NEWS BOT
-# =========================================================
+# ============================================================
+# MYBUZZ NEWS BOT V6
+# ============================================================
+
+print("=" * 40)
+print("MYBUZZ NEWS BOT V6")
+print("=" * 40)
+
+
+# ============================================================
+# ENV
+# ============================================================
 
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "@mybuzzmy")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-DB_FILE = "mybuzz.db"
+GEMINI_MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-2.5-flash"
+)
 
-# 每次运行最多发 1 条
-MAX_POSTS = 1
+PUBLISH_COUNT = int(
+    os.getenv("MYBUZZ_PUBLISH_COUNT", "8")
+)
 
-# GNews 每次最多抓 10 条
-MAX_GNEWS_ARTICLES = 10
+LOOKBACK_HOURS = int(
+    os.getenv("MYBUZZ_LOOKBACK_HOURS", "30")
+)
 
-GNEWS_URL = "https://gnews.io/api/v4/search"
+DRY_RUN = os.getenv(
+    "MYBUZZ_DRY_RUN",
+    "false"
+).lower() == "true"
+
+DB_PATH = "mybuzz.db"
 
 
-# =========================================================
+# ============================================================
+# CATEGORY RATIO
+#
+# 8 POSTS:
+# News          3
+# Viral         2
+# Entertainment 1
+# Food          1
+# Tech          1
+#
+# = 40 / 25 / 15 / 10 / 10 approximately
+# ============================================================
+
+TARGETS = {
+    "news": 0.40,
+    "viral": 0.25,
+    "entertainment": 0.15,
+    "food": 0.10,
+    "tech": 0.10,
+}
+
+
+CATEGORY_LABELS = {
+    "news": "📰 NEWS",
+    "viral": "🔥 VIRAL",
+    "entertainment": "🎬 ENTERTAINMENT",
+    "food": "🍜 FOOD / LIFESTYLE",
+    "tech": "📱 TECH / GADGET",
+}
+
+
+# ============================================================
+# GNEWS SEARCH QUERIES
+# ============================================================
+
+QUERIES = {
+
+    "news": [
+        "Malaysia government",
+        "Malaysia politics",
+        "Malaysia economy",
+        "Malaysia crime",
+        "Malaysia education",
+        "Malaysia latest news",
+    ],
+
+    "viral": [
+        "Malaysia viral",
+        "Malaysia trending",
+        "Malaysia netizens",
+        "Malaysia tular",
+        "Malaysia social media",
+    ],
+
+    "entertainment": [
+        "Malaysia entertainment",
+        "Malaysia celebrity",
+        "Malaysia singer",
+        "Malaysia actor",
+        "Malaysia K-pop",
+        "Malaysia concert",
+        "Malaysia movie",
+    ],
+
+    "food": [
+        "Malaysia food",
+        "Malaysia restaurant",
+        "Malaysia cafe",
+        "Malaysia new restaurant",
+        "Malaysia food trend",
+        "Malaysia lifestyle",
+    ],
+
+    "tech": [
+        "Malaysia technology",
+        "Malaysia gadget",
+        "Malaysia smartphone",
+        "Malaysia AI",
+        "Malaysia Apple",
+        "Malaysia Android",
+        "Malaysia tech",
+    ],
+}
+
+
+# ============================================================
+# KEYWORDS
+# ============================================================
+
+KEYWORDS = {
+
+    "viral": [
+        "viral",
+        "trending",
+        "netizen",
+        "tular",
+        "sensasi",
+        "social media",
+        "bizarre",
+        "popular",
+    ],
+
+    "entertainment": [
+        "entertainment",
+        "celebrity",
+        "singer",
+        "actor",
+        "actress",
+        "k-pop",
+        "concert",
+        "movie",
+        "music",
+        "showbiz",
+        "drama",
+    ],
+
+    "food": [
+        "food",
+        "restaurant",
+        "cafe",
+        "donut",
+        "dessert",
+        "chef",
+        "dining",
+        "travel",
+        "lifestyle",
+    ],
+
+    "tech": [
+        "technology",
+        "tech",
+        "gadget",
+        "iphone",
+        "android",
+        "ai",
+        "artificial intelligence",
+        "smartphone",
+        "telco",
+        "software",
+    ],
+}
+
+
+# ============================================================
+# CHECK ENV
+# ============================================================
+
+required = {
+    "GNEWS_API_KEY": GNEWS_API_KEY,
+    "GEMINI_API_KEY": GEMINI_API_KEY,
+    "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+    "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
+}
+
+missing = [
+    name
+    for name, value in required.items()
+    if not value
+]
+
+if missing:
+    raise SystemExit(
+        "Missing GitHub Secrets: "
+        + ", ".join(missing)
+    )
+
+print("GNews API: OK")
+print("Gemini API: OK")
+print("Telegram: OK")
+
+
+# ============================================================
 # DATABASE
-# =========================================================
+# ============================================================
 
-def init_db():
+def get_database():
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_PATH)
 
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS articles (
-            article_hash TEXT PRIMARY KEY,
-            title TEXT,
+        CREATE TABLE IF NOT EXISTS seen (
+            article_key TEXT PRIMARY KEY,
             url TEXT,
-            created_at TEXT
+            title TEXT,
+            published_at TEXT,
+            category TEXT,
+            posted_at TEXT
         )
     """)
 
     conn.commit()
-    conn.close()
+
+    return conn
 
 
-def already_posted(article_hash):
+# ============================================================
+# HTTP JSON
+# ============================================================
 
-    conn = sqlite3.connect(DB_FILE)
+def get_json(url, params):
 
-    cursor = conn.execute(
-        """
-        SELECT 1
-        FROM articles
-        WHERE article_hash = ?
-        LIMIT 1
-        """,
-        (article_hash,)
+    full_url = (
+        url
+        + "?"
+        + urlencode(params)
     )
 
-    result = cursor.fetchone()
+    for attempt in range(3):
 
-    conn.close()
+        try:
 
-    return result is not None
+            request = Request(
+                full_url,
+                headers={
+                    "User-Agent":
+                    "MYBUZZ-NewsBot/6.0"
+                }
+            )
+
+            with urlopen(
+                request,
+                timeout=25
+            ) as response:
+
+                return json.loads(
+                    response
+                    .read()
+                    .decode("utf-8")
+                )
+
+        except Exception as error:
+
+            print(
+                f"[WARN] HTTP attempt "
+                f"{attempt + 1}/3: {error}"
+            )
+
+            if attempt < 2:
+                time.sleep(
+                    2 ** attempt
+                )
+
+    return {}
 
 
-def save_article(article_hash, title, url):
+# ============================================================
+# FETCH GNEWS
+# ============================================================
 
-    conn = sqlite3.connect(DB_FILE)
+def fetch_category(category):
 
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO articles
-        (
-            article_hash,
-            title,
-            url,
-            created_at
+    since = (
+        datetime.now(timezone.utc)
+        - timedelta(
+            hours=LOOKBACK_HOURS
         )
-        VALUES (?, ?, ?, ?)
-        """,
-        (
-            article_hash,
-            title,
-            url,
-            datetime.now(timezone.utc).isoformat()
-        )
+    ).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
     )
 
-    conn.commit()
-    conn.close()
+    articles = []
+
+    for query in QUERIES[category]:
+
+        params = {
+            "q": query,
+            "lang": "en",
+            "country": "my",
+            "max": 10,
+            "sortby": "publishedAt",
+            "from": since,
+            "apikey": GNEWS_API_KEY,
+        }
+
+        print(
+            f"Fetching [{category}] "
+            f"{query}"
+        )
+
+        try:
+
+            data = get_json(
+                "https://gnews.io/api/v4/search",
+                params
+            )
+
+            for article in data.get(
+                "articles",
+                []
+            ):
+
+                article[
+                    "_requested_category"
+                ] = category
+
+                articles.append(article)
+
+        except Exception as error:
+
+            print(
+                "[WARN] GNews error:",
+                error
+            )
+
+    return articles
 
 
-# =========================================================
-# TEXT CLEAN
-# =========================================================
+# ============================================================
+# NORMALIZE
+# ============================================================
 
-def clean_text(text):
+def normalize(text):
 
-    if not text:
-        return ""
+    text = (text or "").lower()
 
-    text = html.unescape(str(text))
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
 
-    text = " ".join(
-        text.split()
+    text = re.sub(
+        r"[^a-z0-9 ]",
+        "",
+        text
     )
 
     return text.strip()
 
 
-# =========================================================
-# GNEWS
-# =========================================================
+# ============================================================
+# ARTICLE HASH
+# ============================================================
 
-def get_news():
+def article_key(article):
 
-    if not GNEWS_API_KEY:
-        raise RuntimeError(
-            "GNEWS_API_KEY is missing"
-        )
+    url = (
+        article.get("url")
+        or ""
+    ).strip()
 
-    params = {
-        "q": "Malaysia",
-        "lang": "en",
-        "country": "my",
-        "max": MAX_GNEWS_ARTICLES,
-        "sortby": "publishedAt",
-        "apikey": GNEWS_API_KEY
-    }
-
-    response = requests.get(
-        GNEWS_URL,
-        params=params,
-        timeout=30
+    title = normalize(
+        article.get("title")
     )
 
-    if response.status_code == 429:
-        raise RuntimeError(
-            "GNews rate limit reached (429)"
+    source = url or title
+
+    return hashlib.sha256(
+        source.encode("utf-8")
+    ).hexdigest()
+
+
+# ============================================================
+# SIMILAR TITLE KEY
+# ============================================================
+
+def title_key(article):
+
+    words = [
+        word
+        for word in normalize(
+            article.get("title")
+        ).split()
+        if len(word) > 3
+    ]
+
+    return " ".join(
+        sorted(words[:12])
+    )
+
+
+# ============================================================
+# DEDUPLICATE
+# ============================================================
+
+def deduplicate(articles):
+
+    seen_urls = set()
+    seen_titles = set()
+
+    result = []
+
+    articles.sort(
+        key=lambda x:
+        x.get(
+            "publishedAt",
+            ""
+        ),
+        reverse=True
+    )
+
+    for article in articles:
+
+        url_hash = article_key(
+            article
         )
 
-    if response.status_code == 403:
-        raise RuntimeError(
-            "GNews quota reached (403)"
+        title_hash = title_key(
+            article
         )
 
-    response.raise_for_status()
+        if url_hash in seen_urls:
+            continue
 
-    data = response.json()
+        if (
+            title_hash
+            and title_hash in seen_titles
+        ):
+            continue
 
-    return data.get("articles", [])
+        seen_urls.add(
+            url_hash
+        )
+
+        if title_hash:
+            seen_titles.add(
+                title_hash
+            )
+
+        result.append(
+            article
+        )
+
+    return result
 
 
-# =========================================================
-# CATEGORY
-# =========================================================
+# ============================================================
+# CATEGORY CLASSIFICATION
+# ============================================================
 
-def get_category(title, description):
+def classify(article):
 
     text = (
-        f"{title} {description}"
+        (article.get("title") or "")
+        + " "
+        + (article.get("description") or "")
     ).lower()
 
-    # Food
-    if any(word in text for word in [
-        "food",
-        "restaurant",
-        "cafe",
-        "chef",
-        "dining",
-        "recipe",
-        "donut",
-        "dessert",
-        "bakery",
-        "cooking"
-    ]):
-        return "🍩"
+    scores = {
+        category: 0
+        for category in TARGETS
+    }
 
-    # Entertainment
-    if any(word in text for word in [
-        "celebrity",
-        "actor",
-        "actress",
-        "singer",
-        "concert",
-        "movie",
-        "film",
-        "music",
-        "entertainment",
-        "k-pop"
-    ]):
-        return "🎬"
+    requested = article.get(
+        "_requested_category",
+        "news"
+    )
 
-    # Tech
-    if any(word in text for word in [
-        "technology",
-        "tech",
-        "iphone",
-        "android",
-        "apple",
-        "samsung",
-        "google",
-        "artificial intelligence",
-        " ai ",
-        "gadget",
-        "software"
-    ]):
-        return "💻"
+    scores[requested] += 3
 
-    # Viral
-    if any(word in text for word in [
-        "viral",
-        "trending",
-        "tiktok",
-        "instagram",
-        "social media",
-        "shocking"
-    ]):
-        return "🔥"
+    for category, words in KEYWORDS.items():
 
-    # General Malaysia
-    return "🇲🇾"
+        for word in words:
+
+            if word in text:
+                scores[category] += 1
+
+    return max(
+        scores,
+        key=scores.get
+    )
 
 
-# =========================================================
-# GEMINI
-# =========================================================
+# ============================================================
+# BALANCED SELECTION
+# ============================================================
 
-def translate_news(title, description):
+def select_balanced(
+    articles,
+    total
+):
 
-    if not GEMINI_API_KEY:
+    for article in articles:
 
-        raise RuntimeError(
-            "GEMINI_API_KEY is missing"
+        article["_category"] = (
+            classify(article)
         )
 
-    client = genai.Client(
-        api_key=GEMINI_API_KEY
+    quotas = {
+        category:
+        int(total * ratio)
+        for category, ratio
+        in TARGETS.items()
+    }
+
+    remainder = (
+        total
+        - sum(quotas.values())
+    )
+
+    fractions = sorted(
+        (
+            (
+                total * ratio
+                - int(total * ratio),
+                category
+            )
+            for category, ratio
+            in TARGETS.items()
+        ),
+        reverse=True
+    )
+
+    for _, category in fractions[
+        :remainder
+    ]:
+
+        quotas[category] += 1
+
+    print(
+        "Target distribution:",
+        quotas
+    )
+
+    groups = {
+        category: []
+        for category in TARGETS
+    }
+
+    for article in articles:
+
+        groups[
+            article["_category"]
+        ].append(article)
+
+    for group in groups.values():
+
+        group.sort(
+            key=lambda x:
+            x.get(
+                "publishedAt",
+                ""
+            ),
+            reverse=True
+        )
+
+    selected = []
+    used = set()
+
+    # First fill the target categories
+    for category, quota in quotas.items():
+
+        count = 0
+
+        for article in groups[category]:
+
+            key = article_key(
+                article
+            )
+
+            if key in used:
+                continue
+
+            selected.append(
+                article
+            )
+
+            used.add(key)
+
+            count += 1
+
+            if count >= quota:
+                break
+
+    # Fill any missing slots
+    if len(selected) < total:
+
+        remaining = [
+            article
+            for article in articles
+            if article_key(article)
+            not in used
+        ]
+
+        remaining.sort(
+            key=lambda x:
+            x.get(
+                "publishedAt",
+                ""
+            ),
+            reverse=True
+        )
+
+        selected.extend(
+            remaining[
+                :total - len(selected)
+            ]
+        )
+
+    return selected[:total]
+
+
+# ============================================================
+# GEMINI
+# ============================================================
+
+def generate_translation(
+    client,
+    article
+):
+
+    source = (
+        article.get(
+            "source",
+            {}
+        )
+        or {}
+    ).get(
+        "name",
+        ""
     )
 
     prompt = f"""
-You are the editor of a Malaysian news Telegram channel called MYBUZZ.
+You are the editor of MYBUZZ,
+a Malaysia-focused Telegram channel.
 
-Rewrite the following English news into TWO languages:
+Create a short bilingual post
+from the source article.
 
-1. Malaysian Chinese
-2. Bahasa Melayu Malaysia
-
-IMPORTANT RULES:
-
-- Do not invent facts.
-- Do not add information that is not in the original.
-- Keep names accurate.
-- Keep locations accurate.
-- Keep dates accurate.
-- Keep numbers accurate.
-- Make the Chinese title short and attractive.
-- Make the Malay title natural.
-- Make both summaries short.
-- Use natural Malaysian Chinese.
-- Use natural Malaysian Bahasa Melayu.
-- Do not mention AI.
-- Do not mention translation.
-- Do not use Markdown.
-- Return ONLY valid JSON.
-
-Required format:
+Return ONLY valid JSON:
 
 {{
-    "chinese_title": "...",
-    "chinese_summary": "...",
-    "malay_title": "...",
-    "malay_summary": "..."
+  "title_zh": "",
+  "summary_zh": "",
+  "title_ms": "",
+  "summary_ms": "",
+  "category": ""
 }}
 
-English title:
-{title}
+category MUST be one of:
+news
+viral
+entertainment
+food
+tech
 
-English description:
-{description}
+RULES:
+
+1. Chinese = natural Simplified Chinese.
+2. Malay = natural Malaysian Bahasa Melayu.
+3. Do not invent information.
+4. Keep names accurate.
+5. Keep numbers accurate.
+6. Keep dates accurate.
+7. Keep locations accurate.
+8. Summary = maximum 2 short sentences.
+9. Do not copy long sentences.
+10. Sensitive news must be neutral.
+11. Make the headline attractive but factual.
+12. Do not put emojis inside the title.
+13. Category must match the actual article.
+
+SOURCE:
+Publisher: {source}
+
+Title:
+{article.get("title", "")}
+
+Description:
+{article.get("description", "")}
+
+URL:
+{article.get("url", "")}
 """
 
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt
-    )
-
-    if not response:
-
-        raise RuntimeError(
-            "Gemini returned no response"
-        )
-
-    text = response.text
-
-    if not text:
-
-        raise RuntimeError(
-            "Gemini returned empty text"
-        )
-
-    text = text.strip()
-
-    # Remove Markdown code block if Gemini adds it
-    if text.startswith("```"):
-
-        text = text.replace(
-            "```json",
-            ""
-        )
-
-        text = text.replace(
-            "```",
-            ""
-        )
-
-        text = text.strip()
-
-    # Try JSON directly
-    try:
-
-        return json.loads(text)
-
-    except json.JSONDecodeError:
-
-        pass
-
-    # Try extracting JSON
-    start = text.find("{")
-    end = text.rfind("}")
-
-    if start == -1 or end == -1:
-
-        raise RuntimeError(
-            "Gemini returned invalid JSON"
-        )
-
-    json_text = text[
-        start:end + 1
+    retry_delays = [
+        5,
+        15,
+        30,
+        60
     ]
 
-    return json.loads(json_text)
+    for attempt in range(4):
+
+        try:
+
+            print(
+                f"Gemini attempt "
+                f"{attempt + 1}/4..."
+            )
+
+            response = (
+                client
+                .models
+                .generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        response_mime_type="application/json",
+                    ),
+                )
+            )
+
+            if not response.text:
+
+                raise RuntimeError(
+                    "Gemini returned empty response"
+                )
+
+            result = json.loads(
+                response.text
+            )
+
+            if (
+                result.get("category")
+                not in TARGETS
+            ):
+
+                result["category"] = (
+                    article.get(
+                        "_category",
+                        "news"
+                    )
+                )
+
+            return result
+
+        except Exception as error:
+
+            print(
+                f"[WARN] Gemini error: "
+                f"{error}"
+            )
+
+            if attempt < 3:
+
+                print(
+                    f"Retrying in "
+                    f"{retry_delays[attempt]}"
+                    f" seconds..."
+                )
+
+                time.sleep(
+                    retry_delays[attempt]
+                )
+
+    return None
 
 
-# =========================================================
+# ============================================================
+# IMAGE VALIDATION
+# ============================================================
+
+def valid_image(url):
+
+    if not url:
+        return False
+
+    if not url.startswith(
+        ("http://", "https://")
+    ):
+        return False
+
+    lowered = url.lower()
+
+    # Prevent logos being used
+    # as article images.
+    blocked = [
+        "logo",
+        "favicon",
+        "placeholder",
+        "default-image",
+        "default_image",
+        "avatar",
+    ]
+
+    for word in blocked:
+
+        if word in lowered:
+
+            print(
+                "Image rejected:",
+                word
+            )
+
+            return False
+
+    try:
+
+        response = requests.get(
+            url,
+            stream=True,
+            timeout=10,
+            headers={
+                "User-Agent":
+                "MYBUZZ-NewsBot/6.0"
+            }
+        )
+
+        content_type = (
+            response
+            .headers
+            .get(
+                "content-type",
+                ""
+            )
+            .lower()
+        )
+
+        if response.status_code != 200:
+            return False
+
+        if "image/" not in content_type:
+            return False
+
+        return True
+
+    except Exception:
+
+        return False
+
+
+# ============================================================
 # TELEGRAM
-# =========================================================
+# ============================================================
 
-def send_photo(image_url, caption):
+def telegram_request(
+    method,
+    data
+):
 
-    if not TELEGRAM_BOT_TOKEN:
-
-        raise RuntimeError(
-            "TELEGRAM_BOT_TOKEN is missing"
-        )
-
-    telegram_url = (
+    url = (
         "https://api.telegram.org/"
-        f"bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+        f"bot{TELEGRAM_BOT_TOKEN}/"
+        f"{method}"
     )
 
-    data = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "photo": image_url,
-        "caption": caption,
-        "parse_mode": "HTML"
-    }
+    for attempt in range(3):
 
-    response = requests.post(
-        telegram_url,
-        data=data,
-        timeout=30
-    )
+        try:
 
-    response.raise_for_status()
+            response = requests.post(
+                url,
+                data=data,
+                timeout=30
+            )
 
-    result = response.json()
+            if response.ok:
 
-    if not result.get("ok"):
+                result = (
+                    response
+                    .json()
+                )
 
-        raise RuntimeError(
-            f"Telegram API error: {result}"
-        )
+                if result.get("ok"):
+
+                    return True
+
+                print(
+                    "[WARN] Telegram:",
+                    result
+                )
+
+            else:
+
+                print(
+                    "[WARN] Telegram HTTP:",
+                    response.status_code,
+                    response.text[:300]
+                )
+
+        except Exception as error:
+
+            print(
+                "[WARN] Telegram error:",
+                error
+            )
+
+        if attempt < 2:
+
+            time.sleep(
+                2 ** attempt
+            )
+
+    return False
 
 
-# =========================================================
-# TELEGRAM MESSAGE
-# =========================================================
+# ============================================================
+# BUILD TELEGRAM POST
+# ============================================================
 
-def create_caption(article, translation):
+def build_message(
+    article,
+    translated
+):
 
-    title = clean_text(
-        article.get("title", "")
-    )
-
-    description = clean_text(
-        article.get("description", "")
-    )
-
-    url = clean_text(
-        article.get("url", "")
-    )
-
-    emoji = get_category(
-        title,
-        description
-    )
-
-    chinese_title = clean_text(
-        translation.get(
-            "chinese_title",
-            title
-        )
-    )
-
-    chinese_summary = clean_text(
-        translation.get(
-            "chinese_summary",
-            description
-        )
-    )
-
-    malay_title = clean_text(
-        translation.get(
-            "malay_title",
-            title
-        )
-    )
-
-    malay_summary = clean_text(
-        translation.get(
-            "malay_summary",
-            description
+    category = translated.get(
+        "category",
+        article.get(
+            "_category",
+            "news"
         )
     )
 
-    # Limit summary length
-    if len(chinese_summary) > 220:
+    label = CATEGORY_LABELS.get(
+        category,
+        CATEGORY_LABELS["news"]
+    )
 
-        chinese_summary = (
-            chinese_summary[:220]
-            .rstrip()
-            + "..."
+    title_zh = html.escape(
+        translated.get(
+            "title_zh",
+            ""
         )
+    )
 
-    if len(malay_summary) > 220:
-
-        malay_summary = (
-            malay_summary[:220]
-            .rstrip()
-            + "..."
+    summary_zh = html.escape(
+        translated.get(
+            "summary_zh",
+            ""
         )
+    )
+
+    title_ms = html.escape(
+        translated.get(
+            "title_ms",
+            ""
+        )
+    )
+
+    summary_ms = html.escape(
+        translated.get(
+            "summary_ms",
+            ""
+        )
+    )
+
+    url = article.get(
+        "url",
+        ""
+    )
 
     safe_url = html.escape(
         url,
         quote=True
     )
 
-    caption = (
-        f"{emoji} "
-        f"<b>{html.escape(chinese_title)}</b>"
-        f"\n\n"
-
-        f"🇨🇳 "
-        f"{html.escape(chinese_summary)}"
-        f"\n\n"
-
-        f"🇲🇾 "
-        f"<b>{html.escape(malay_title)}</b>"
-        f"\n\n"
-
-        f"{html.escape(malay_summary)}"
-        f"\n\n"
-
-        f'👉 <a href="{safe_url}">'
-        f"点击阅读完整新闻"
-        f"</a>"
-        f"\n\n"
-
-        f'👉 <a href="{safe_url}">'
-        f"Klik untuk baca berita penuh"
-        f"</a>"
+    source = html.escape(
+        (
+            article.get(
+                "source",
+                {}
+            )
+            or {}
+        ).get(
+            "name",
+            "Source"
+        )
     )
 
-    return caption
+    message = (
+        f"<b>{label}｜"
+        f"{title_zh}</b>\n\n"
+
+        f"🇨🇳 {summary_zh}\n\n"
+
+        f"<b>🇲🇾 "
+        f"{title_ms}</b>\n\n"
+
+        f"{summary_ms}\n\n"
+
+        f"👉 <b>"
+        f"<a href=\"{safe_url}\">"
+        f"点击阅读完整新闻"
+        f"</a>"
+        f"</b>\n"
+
+        f"👉 <b>"
+        f"<a href=\"{safe_url}\">"
+        f"Klik untuk baca berita penuh"
+        f"</a>"
+        f"</b>\n\n"
+
+        f"🔗 {source}"
+    )
+
+    return message
 
 
-# =========================================================
+# ============================================================
+# PUBLISH
+# ============================================================
+
+def publish_article(
+    article,
+    translated
+):
+
+    message = build_message(
+        article,
+        translated
+    )
+
+    if DRY_RUN:
+
+        print("\n")
+        print("=" * 70)
+        print(message)
+        print("=" * 70)
+        print("\n")
+
+        return True
+
+    image = article.get(
+        "image"
+    )
+
+    # IMPORTANT:
+    # Never use obvious logos.
+    if valid_image(image):
+
+        print(
+            "Sending article image..."
+        )
+
+        success = telegram_request(
+            "sendPhoto",
+            {
+                "chat_id":
+                    TELEGRAM_CHAT_ID,
+
+                "photo":
+                    image,
+
+                "caption":
+                    message,
+
+                "parse_mode":
+                    "HTML",
+            }
+        )
+
+        if success:
+
+            return True
+
+    # If image is missing/bad,
+    # send normal Telegram post.
+    print(
+        "Image unavailable, "
+        "sending text post..."
+    )
+
+    return telegram_request(
+        "sendMessage",
+        {
+            "chat_id":
+                TELEGRAM_CHAT_ID,
+
+            "text":
+                message,
+
+            "parse_mode":
+                "HTML",
+
+            "disable_web_page_preview":
+                "false",
+        }
+    )
+
+
+# ============================================================
 # MAIN
-# =========================================================
+# ============================================================
 
 def main():
 
-    print("================================")
-    print("MYBUZZ NEWS BOT V5")
-    print("================================")
-
-    init_db()
-
-    # -----------------------------------------
-    # Check API
-    # -----------------------------------------
-
-    if not GNEWS_API_KEY:
-
-        print(
-            "ERROR: GNEWS_API_KEY missing"
-        )
-
-        return
-
-    if not TELEGRAM_BOT_TOKEN:
-
-        print(
-            "ERROR: TELEGRAM_BOT_TOKEN missing"
-        )
-
-        return
-
-    if not GEMINI_API_KEY:
-
-        print(
-            "ERROR: GEMINI_API_KEY missing"
-        )
-
-        return
-
-    print("GNews API: OK")
-    print("Gemini API: OK")
     print(
-        f"Telegram: {TELEGRAM_CHAT_ID}"
+        f"Lookback: "
+        f"{LOOKBACK_HOURS} hours"
     )
 
-    print("")
-
-    # -----------------------------------------
-    # Fetch news
-    # -----------------------------------------
-
     print(
-        "Fetching Malaysia news..."
+        f"Publish count: "
+        f"{PUBLISH_COUNT}"
     )
 
-    try:
+    # --------------------------------------------------------
+    # FETCH
+    # --------------------------------------------------------
 
-        articles = get_news()
+    all_articles = []
 
-    except Exception as e:
+    for category in QUERIES:
+
+        articles = fetch_category(
+            category
+        )
+
+        all_articles.extend(
+            articles
+        )
+
+    print(
+        f"Raw articles: "
+        f"{len(all_articles)}"
+    )
+
+    # --------------------------------------------------------
+    # DEDUPE
+    # --------------------------------------------------------
+
+    all_articles = deduplicate(
+        all_articles
+    )
+
+    print(
+        f"After dedupe: "
+        f"{len(all_articles)}"
+    )
+
+    # --------------------------------------------------------
+    # DATABASE
+    # --------------------------------------------------------
+
+    conn = get_database()
+
+    seen = {
+        row[0]
+        for row in conn.execute(
+            "SELECT article_key FROM seen"
+        )
+    }
+
+    fresh_articles = [
+        article
+        for article in all_articles
+        if article_key(article)
+        not in seen
+    ]
+
+    print(
+        f"Fresh articles: "
+        f"{len(fresh_articles)}"
+    )
+
+    if not fresh_articles:
 
         print(
-            f"GNews error: {e}"
+            "No new articles."
         )
+
+        conn.close()
 
         return
 
-    print(
-        f"Found {len(articles)} articles"
+    # --------------------------------------------------------
+    # SELECT BALANCED
+    # --------------------------------------------------------
+
+    selected = select_balanced(
+        fresh_articles,
+        PUBLISH_COUNT
     )
 
-    if not articles:
+    print(
+        f"Selected articles: "
+        f"{len(selected)}"
+    )
 
+    # --------------------------------------------------------
+    # GEMINI
+    # --------------------------------------------------------
+
+    client = genai.Client(
+        api_key=GEMINI_API_KEY
+    )
+
+    posted = 0
+
+    # --------------------------------------------------------
+    # PUBLISH
+    # --------------------------------------------------------
+
+    for index, article in enumerate(
+        selected,
+        start=1
+    ):
+
+        print()
         print(
-            "No articles found."
+            "=" * 60
         )
 
-        return
+        print(
+            f"[{index}/{len(selected)}]"
+        )
 
-    # -----------------------------------------
-    # Select article
-    # -----------------------------------------
-
-    selected_article = None
-    selected_hash = None
-
-    for article in articles:
-
-        title = clean_text(
+        print(
             article.get(
                 "title",
                 ""
             )
         )
 
-        url = clean_text(
+        print(
+            "Category:",
             article.get(
-                "url",
-                ""
+                "_category",
+                "news"
             )
         )
 
-        image_url = clean_text(
-            article.get(
-                "image",
-                ""
+        # --------------------------------------------
+        # AI
+        # --------------------------------------------
+
+        translated = (
+            generate_translation(
+                client,
+                article
             )
         )
 
-        if not title:
-
-            continue
-
-        if not url:
-
-            continue
-
-        article_hash = hashlib.sha256(
-            url.encode("utf-8")
-        ).hexdigest()
-
-        if already_posted(
-            article_hash
-        ):
+        if not translated:
 
             print(
-                f"Already posted: {title}"
+                "Gemini failed after "
+                "all retries."
             )
-
-            continue
-
-        if not image_url:
 
             print(
-                f"No image: {title}"
+                "Skipping this article."
             )
 
             continue
 
-        selected_article = article
-        selected_hash = article_hash
-
-        break
-
-    if not selected_article:
-
-        print(
-            "No suitable new article found."
+        # Gemini can correct category
+        ai_category = translated.get(
+            "category"
         )
 
-        return
+        if ai_category in TARGETS:
 
-    article = selected_article
+            article["_category"] = (
+                ai_category
+            )
 
-    title = clean_text(
-        article.get(
-            "title",
-            ""
+        # --------------------------------------------
+        # TELEGRAM
+        # --------------------------------------------
+
+        success = publish_article(
+            article,
+            translated
         )
-    )
 
-    description = clean_text(
-        article.get(
-            "description",
-            ""
-        )
-    )
+        if success:
 
-    image_url = clean_text(
-        article.get(
-            "image",
-            ""
-        )
-    )
+            posted += 1
 
-    article_url = clean_text(
-        article.get(
-            "url",
-            ""
-        )
-    )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO seen
+                (
+                    article_key,
+                    url,
+                    title,
+                    published_at,
+                    category,
+                    posted_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    article_key(article),
 
-    print("")
+                    article.get(
+                        "url",
+                        ""
+                    ),
+
+                    article.get(
+                        "title",
+                        ""
+                    ),
+
+                    article.get(
+                        "publishedAt",
+                        ""
+                    ),
+
+                    article.get(
+                        "_category",
+                        "news"
+                    ),
+
+                    datetime.now(
+                        timezone.utc
+                    ).isoformat(),
+                )
+            )
+
+            conn.commit()
+
+            print(
+                "Telegram: POSTED"
+            )
+
+        else:
+
+            print(
+                "Telegram: FAILED"
+            )
+
+        # Don't spam Telegram/API
+        time.sleep(3)
+
+    conn.close()
+
+    print()
+    print("=" * 40)
     print(
-        f"Selected: {title}"
+        f"DONE | "
+        f"Posted {posted}/{len(selected)}"
     )
-
-    # -----------------------------------------
-    # Gemini
-    # -----------------------------------------
-
-    print(
-        "Translating with Gemini..."
-    )
-
-    try:
-
-        translation = translate_news(
-            title,
-            description
-        )
-
-        print(
-            "Gemini translation: OK"
-        )
-
-    except Exception as e:
-
-        print(
-            f"Gemini error: {e}"
-        )
-
-        return
-
-    # -----------------------------------------
-    # Create message
-    # -----------------------------------------
-
-    caption = create_caption(
-        article,
-        translation
-    )
-
-    # -----------------------------------------
-    # Send Telegram
-    # -----------------------------------------
-
-    print(
-        "Sending Telegram message..."
-    )
-
-    try:
-
-        send_photo(
-            image_url,
-            caption
-        )
-
-        save_article(
-            selected_hash,
-            title,
-            article_url
-        )
-
-        print(
-            "Telegram: SUCCESS"
-        )
-
-    except Exception as e:
-
-        print(
-            f"Telegram error: {e}"
-        )
-
-        return
-
-    print("")
-    print("================================")
-    print("Finished. Sent 1 article.")
-    print("================================")
+    print("=" * 40)
 
 
-# =========================================================
+# ============================================================
 # START
-# =========================================================
+# ============================================================
 
 if __name__ == "__main__":
-
     main()

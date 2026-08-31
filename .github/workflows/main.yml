@@ -3,7 +3,7 @@ name: MYBUZZ News Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "15 * * * *"
 
 jobs:
   news-bot:

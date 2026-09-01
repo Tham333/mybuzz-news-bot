@@ -52,8 +52,7 @@ jobs:
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_WIKI_CHANNEL_ID: ${{ secrets.TELEGRAM_WIKI_CHANNEL_ID || secrets.TELEGRAM_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
         run: |
 
@@ -78,20 +77,12 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$TELEGRAM_CHANNEL_ID" ]; then
-            echo "ERROR: TELEGRAM_CHANNEL_ID is missing."
-            echo "Please set TELEGRAM_CHANNEL_ID or TELEGRAM_CHAT_ID in secrets."
+          if [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "ERROR: TELEGRAM_CHAT_ID is missing."
             exit 1
           fi
 
-          if [ -z "$TELEGRAM_WIKI_CHANNEL_ID" ]; then
-            echo "WARNING: TELEGRAM_WIKI_CHANNEL_ID is missing, using TELEGRAM_CHANNEL_ID"
-            export TELEGRAM_WIKI_CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
-          fi
-
           echo "API configuration OK."
-          echo "TELEGRAM_CHANNEL_ID: $TELEGRAM_CHANNEL_ID"
-          echo "TELEGRAM_WIKI_CHANNEL_ID: $TELEGRAM_WIKI_CHANNEL_ID"
 
           python mybuzz_news_bot.py
 
@@ -105,7 +96,7 @@ jobs:
       # ============================================================
 
       - name: Save duplicate history
-        if: success()
+        if: always()
         run: |
 
           echo "======================================"

@@ -3,13 +3,14 @@ import json
 import time
 import hashlib
 import logging
+import html
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 import requests
-import argostranslate.package
-import argostranslate.translate
+import feedparser
+from openai import OpenAI
 
 
 # ============================================================
@@ -26,17 +27,15 @@ import argostranslate.translate
 #       ↓
 # Select NEW article
 #       ↓
-# Argos Translate
+# Groq
 #       ↓
-# English → Chinese
-# English → Malay
+# Chinese + Malay content
 #       ↓
 # TELEGRAM
 #       ↓
 # Telegram SUCCESS
 #       ↓
 # posted.json
-#
 #
 # CYCLE
 #
@@ -54,15 +53,11 @@ import argostranslate.translate
 # CONFIG
 # ============================================================
 
-GNEWS_API_KEY = os.getenv(
-    "GNEWS_API_KEY",
-    ""
-).strip()
+GNEWS_API_KEY = os.getenv("GNEWS_API_KEY", "").strip()
 
-TELEGRAM_BOT_TOKEN = os.getenv(
-    "TELEGRAM_BOT_TOKEN",
-    ""
-).strip()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 
 TELEGRAM_CHANNEL_ID = os.getenv(
     "TELEGRAM_CHANNEL_ID",
@@ -74,45 +69,26 @@ TELEGRAM_WIKI_CHANNEL_ID = os.getenv(
     TELEGRAM_CHANNEL_ID
 ).strip()
 
-
-# ============================================================
-# FILES
-# ============================================================
+GROQ_MODEL = os.getenv(
+    "GROQ_MODEL",
+    "llama-3.3-70b-versatile"
+).strip()
 
 POSTED_FILE = Path("posted.json")
 
-
-# ============================================================
-# URLS
-# ============================================================
-
 GNEWS_URL = "https://gnews.io/api/v4/search"
 
-WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
+WIKIPEDIA_API = (
+    "https://en.wikipedia.org/w/api.php"
+)
 
-
-# ============================================================
-# RUNTIME
-# ============================================================
-
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 20
 
 MAX_POSTED_HISTORY = 500
 
 GNEWS_MAX_RESULTS = 10
 
 CYCLE_LENGTH = 3
-
-
-# ============================================================
-# ARGOS LANGUAGES
-# ============================================================
-
-ARGOS_SOURCE_LANGUAGE = "en"
-
-ARGOS_CHINESE_LANGUAGE = "zh"
-
-ARGOS_MALAY_LANGUAGE = "ms"
 
 
 # ============================================================
@@ -135,11 +111,24 @@ SESSION = requests.Session()
 
 SESSION.headers.update({
     "User-Agent": (
-        "MYBUZZ-News-Bot/3.0 "
+        "MYBUZZ-News-Bot/2.0 "
         "(https://github.com/Tham333/mybuzz-news-bot)"
     ),
     "Accept": "*/*"
 })
+
+
+# ============================================================
+# API CLIENT
+# ============================================================
+
+groq_client = None
+
+if GROQ_API_KEY:
+    groq_client = OpenAI(
+        api_key=GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1"
+    )
 
 
 # ============================================================
@@ -148,26 +137,21 @@ SESSION.headers.update({
 
 def check_config():
 
-    logger.info(
-        "Checking API configuration..."
-    )
+    logger.info("Checking API configuration...")
 
     missing = []
 
     if not GNEWS_API_KEY:
-        missing.append(
-            "GNEWS_API_KEY"
-        )
+        missing.append("GNEWS_API_KEY")
+
+    if not GROQ_API_KEY:
+        missing.append("GROQ_API_KEY")
 
     if not TELEGRAM_BOT_TOKEN:
-        missing.append(
-            "TELEGRAM_BOT_TOKEN"
-        )
+        missing.append("TELEGRAM_BOT_TOKEN")
 
     if not TELEGRAM_CHANNEL_ID:
-        missing.append(
-            "TELEGRAM_CHANNEL_ID"
-        )
+        missing.append("TELEGRAM_CHANNEL_ID")
 
     if missing:
 
@@ -178,336 +162,9 @@ def check_config():
 
         return False
 
-    logger.info(
-        "API configuration OK."
-    )
+    logger.info("API configuration OK.")
 
     return True
-
-
-# ============================================================
-# ARGOS TRANSLATE
-# ============================================================
-
-def get_argos_translation(
-    from_code,
-    to_code
-):
-
-    """
-    Get an installed Argos translation model.
-
-    If the model does not exist, install it automatically.
-    """
-
-    try:
-
-        translation = (
-            argostranslate.translate
-            .get_translation_from_codes(
-                from_code,
-                to_code
-            )
-        )
-
-        if translation:
-
-            logger.info(
-                "Argos model already installed: %s -> %s",
-                from_code,
-                to_code
-            )
-
-            return translation
-
-    except Exception:
-
-        pass
-
-    logger.info(
-        "Argos model missing: %s -> %s",
-        from_code,
-        to_code
-    )
-
-    logger.info(
-        "Updating Argos package index..."
-    )
-
-    argostranslate.package.update_package_index()
-
-    available_packages = (
-        argostranslate.package
-        .get_available_packages()
-    )
-
-    package_to_install = None
-
-    for package in available_packages:
-
-        if (
-            package.from_code == from_code
-            and
-            package.to_code == to_code
-        ):
-
-            package_to_install = package
-            break
-
-    if not package_to_install:
-
-        raise RuntimeError(
-            "Argos translation model not found: "
-            + from_code
-            + " -> "
-            + to_code
-        )
-
-    logger.info(
-        "Downloading Argos model: %s -> %s",
-        from_code,
-        to_code
-    )
-
-    package_path = (
-        package_to_install.download()
-    )
-
-    logger.info(
-        "Installing Argos model..."
-    )
-
-    argostranslate.package.install_from_path(
-        package_path
-    )
-
-    logger.info(
-        "Argos model installed: %s -> %s",
-        from_code,
-        to_code
-    )
-
-    translation = (
-        argostranslate.translate
-        .get_translation_from_codes(
-            from_code,
-            to_code
-        )
-    )
-
-    if not translation:
-
-        raise RuntimeError(
-            "Argos model installation succeeded "
-            "but translation model could not be loaded: "
-            + from_code
-            + " -> "
-            + to_code
-        )
-
-    return translation
-
-
-# ============================================================
-# INITIALIZE ARGOS
-# ============================================================
-
-ARGOS_EN_ZH = None
-
-ARGOS_EN_MS = None
-
-
-def initialize_argos():
-
-    global ARGOS_EN_ZH
-    global ARGOS_EN_MS
-
-    logger.info(
-        "======================================"
-    )
-
-    logger.info(
-        "INITIALIZING ARGOS TRANSLATE"
-    )
-
-    logger.info(
-        "======================================"
-    )
-
-    # English → Chinese
-
-    ARGOS_EN_ZH = get_argos_translation(
-        ARGOS_SOURCE_LANGUAGE,
-        ARGOS_CHINESE_LANGUAGE
-    )
-
-    # English → Malay
-
-    ARGOS_EN_MS = get_argos_translation(
-        ARGOS_SOURCE_LANGUAGE,
-        ARGOS_MALAY_LANGUAGE
-    )
-
-    logger.info(
-        "Argos translation models READY."
-    )
-
-    logger.info(
-        "English → Chinese: READY"
-    )
-
-    logger.info(
-        "English → Malay: READY"
-    )
-
-    logger.info(
-        "======================================"
-    )
-
-
-# ============================================================
-# NORMALIZE TEXT
-# ============================================================
-
-def clean_text(text):
-
-    if not text:
-        return ""
-
-    text = str(text)
-
-    text = text.replace(
-        "\xa0",
-        " "
-    )
-
-    text = text.replace(
-        "\r",
-        " "
-    )
-
-    text = text.replace(
-        "\n",
-        " "
-    )
-
-    return " ".join(
-        text.split()
-    ).strip()
-
-
-# ============================================================
-# ARGOS TRANSLATE TEXT
-# ============================================================
-
-def translate_text(
-    text,
-    target_language
-):
-
-    text = clean_text(text)
-
-    if not text:
-        return ""
-
-    global ARGOS_EN_ZH
-    global ARGOS_EN_MS
-
-    try:
-
-        if target_language == "zh":
-
-            if not ARGOS_EN_ZH:
-
-                ARGOS_EN_ZH = get_argos_translation(
-                    "en",
-                    "zh"
-                )
-
-            translated = (
-                ARGOS_EN_ZH.translate(text)
-            )
-
-        elif target_language == "ms":
-
-            if not ARGOS_EN_MS:
-
-                ARGOS_EN_MS = get_argos_translation(
-                    "en",
-                    "ms"
-                )
-
-            translated = (
-                ARGOS_EN_MS.translate(text)
-            )
-
-        else:
-
-            raise ValueError(
-                "Unsupported target language: "
-                + target_language
-            )
-
-        return clean_text(
-            translated
-        )
-
-    except Exception as e:
-
-        logger.error(
-            "Argos translation failed (%s): %s",
-            target_language,
-            e
-        )
-
-        raise
-
-
-# ============================================================
-# TEXT LENGTH CONTROL
-# ============================================================
-
-def truncate_text(
-    text,
-    max_chars
-):
-
-    text = clean_text(text)
-
-    if len(text) <= max_chars:
-        return text
-
-    truncated = text[:max_chars]
-
-    boundaries = [
-        "。",
-        "！",
-        "？",
-        ".",
-        "!",
-        "?"
-    ]
-
-    best_position = -1
-
-    for boundary in boundaries:
-
-        position = truncated.rfind(
-            boundary
-        )
-
-        if position > best_position:
-            best_position = position
-
-    if best_position > int(
-        max_chars * 0.65
-    ):
-
-        return truncated[
-            :best_position + 1
-        ].strip()
-
-    return truncated.strip()
 
 
 # ============================================================
@@ -519,8 +176,7 @@ def load_posted():
     if not POSTED_FILE.exists():
 
         logger.info(
-            "posted.json not found. "
-            "Creating new database."
+            "posted.json not found. Creating new database."
         )
 
         return {
@@ -581,16 +237,11 @@ def save_posted(data):
 
     try:
 
-        items = data.get(
-            "items",
-            []
-        )
+        items = data.get("items", [])
 
         if len(items) > MAX_POSTED_HISTORY:
 
-            items = items[
-                -MAX_POSTED_HISTORY:
-            ]
+            items = items[-MAX_POSTED_HISTORY:]
 
         data["items"] = items
 
@@ -611,9 +262,7 @@ def save_posted(data):
                 indent=2
             )
 
-        temp_file.replace(
-            POSTED_FILE
-        )
+        temp_file.replace(POSTED_FILE)
 
         logger.info(
             "posted.json saved successfully."
@@ -629,6 +278,27 @@ def save_posted(data):
         )
 
         return False
+
+
+# ============================================================
+# NORMALIZE TEXT
+# ============================================================
+
+def clean_text(text):
+
+    if not text:
+        return ""
+
+    text = str(text)
+
+    text = text.replace(
+        "\xa0",
+        " "
+    )
+
+    return " ".join(
+        text.split()
+    ).strip()
 
 
 # ============================================================
@@ -711,15 +381,16 @@ def fetch_news():
 
     queries = [
         "Malaysia",
+        "Malaysia Kuala Lumpur",
         "Malaysia government",
-        "Malaysia economy"
+        "Malaysia economy",
+        "Malaysia police",
+        "Malaysia education"
     ]
 
     all_articles = {}
 
-    for index, query in enumerate(
-        queries
-    ):
+    for index, query in enumerate(queries):
 
         params = {
             "q": query,
@@ -729,37 +400,48 @@ def fetch_news():
             "apikey": GNEWS_API_KEY
         }
 
-        result = gnews_request(
-            params
+        result = gnews_request(params)
+
+        if not result:
+
+            if index < len(queries) - 1:
+
+                time.sleep(1)
+
+            continue
+
+        articles = result.get(
+            "articles",
+            []
         )
 
-        if result:
+        for article in articles:
 
-            articles = result.get(
-                "articles",
-                []
+            title = clean_text(
+                article.get("title")
             )
 
-            for article in articles:
+            url = (
+                article.get("url")
+                or ""
+            ).strip()
 
-                title = clean_text(
-                    article.get("title")
-                )
+            if not title or not url:
+                continue
 
-                url = (
-                    article.get("url")
-                    or ""
-                ).strip()
+            key = url
 
-                if not title or not url:
-                    continue
+            if key not in all_articles:
 
-                if url not in all_articles:
+                all_articles[key] = article
 
-                    all_articles[url] = article
+        # ----------------------------------------------------
+        # Avoid GNews 429
+        # ----------------------------------------------------
 
         if index < len(queries) - 1:
-            time.sleep(2)
+
+            time.sleep(0.7)
 
     articles = list(
         all_articles.values()
@@ -774,14 +456,12 @@ def fetch_news():
 
 
 # ============================================================
-# MALAYSIA KEYWORDS
+# FILTER MALAYSIA NEWS
 # ============================================================
 
 MALAYSIA_KEYWORDS = [
-
     "malaysia",
     "malaysian",
-
     "kuala lumpur",
     "selangor",
     "putrajaya",
@@ -798,22 +478,6 @@ MALAYSIA_KEYWORDS = [
     "sabah",
     "sarawak",
     "labuan",
-
-    "petaling jaya",
-    "shah alam",
-    "subang jaya",
-    "klang",
-    "kajang",
-    "cyberjaya",
-    "sepang",
-    "serdang",
-    "ipoh",
-    "george town",
-    "johor bahru",
-    "malacca city",
-    "kota kinabalu",
-    "kuching",
-
     "ringgit",
     "anwar ibrahim",
     "mat sabu",
@@ -821,24 +485,15 @@ MALAYSIA_KEYWORDS = [
     "parlimen",
     "pdrm",
     "police malaysia",
-    "bank negara",
-    "malaysian government"
+    "bank negara"
 ]
 
-
-# ============================================================
-# CHECK MALAYSIA NEWS
-# ============================================================
 
 def is_malaysia_news(article):
 
     text = " ".join([
-        clean_text(
-            article.get("title")
-        ),
-        clean_text(
-            article.get("description")
-        ),
+        clean_text(article.get("title")),
+        clean_text(article.get("description")),
         clean_text(
             article.get("content")
         )
@@ -868,41 +523,26 @@ def select_new_news(
 
     for item in posted_items:
 
-        if isinstance(
-            item,
-            dict
-        ):
+        if isinstance(item, dict):
 
-            value = item.get(
-                "id"
-            )
+            value = item.get("id")
 
             if value:
-                posted_ids.add(
-                    value
-                )
+                posted_ids.add(value)
 
-        elif isinstance(
-            item,
-            str
-        ):
+        elif isinstance(item, str):
 
-            posted_ids.add(
-                item
-            )
+            posted_ids.add(item)
 
     candidates = []
 
     for article in articles:
 
-        if not is_malaysia_news(
-            article
-        ):
+        if not is_malaysia_news(article):
+
             continue
 
-        aid = article_id(
-            article
-        )
+        aid = article_id(article)
 
         title = clean_text(
             article.get("title")
@@ -942,12 +582,16 @@ def select_new_news(
 
 
 # ============================================================
-# GENERATE NEWS CONTENT
+# GROQ CONTENT GENERATION
 # ============================================================
 
-def generate_news_content(
-    article
-):
+def generate_news_content(article):
+
+    if not groq_client:
+
+        raise RuntimeError(
+            "Groq client is not configured."
+        )
 
     title = clean_text(
         article.get("title")
@@ -957,129 +601,202 @@ def generate_news_content(
         article.get("description")
     )
 
-    content = clean_text(
-        article.get("content")
+    source = clean_text(
+        article.get("source", {}).get("name")
+        if isinstance(
+            article.get("source"),
+            dict
+        )
+        else ""
     )
 
-    source_data = article.get(
-        "source",
-        {}
+    url = (
+        article.get("url")
+        or ""
+    ).strip()
+
+    prompt = f"""
+You are the editor of MYBuzz NEWS, a bilingual Malaysia news channel.
+
+Create a concise bilingual Telegram news post from the article below.
+
+IMPORTANT:
+- Do NOT invent facts.
+- Do NOT add facts that are not supported by the article.
+- Chinese should be natural Simplified Chinese.
+- Malay should be natural Malaysian Malay.
+- Keep both versions short and readable.
+- Do not use markdown headings.
+- Do not use hashtags.
+- Do not include the source name in the article body.
+- Do not include URLs inside the generated body.
+- Chinese title should be concise.
+- Malay title should be concise.
+- Chinese summary: 1 short paragraph.
+- Malay summary: 1 short paragraph.
+
+OUTPUT EXACTLY IN THIS FORMAT:
+
+CHINESE_TITLE:
+...
+
+CHINESE_BODY:
+...
+
+MALAY_TITLE:
+...
+
+MALAY_BODY:
+...
+
+ARTICLE:
+{title}
+
+DESCRIPTION:
+{description}
+
+SOURCE:
+{source}
+
+URL:
+{url}
+"""
+
+    response = groq_client.responses.create(
+        model=GROQ_MODEL,
+        input=prompt
     )
 
-    if isinstance(
-        source_data,
-        dict
-    ):
+    text = response.output_text.strip()
 
-        source = clean_text(
-            source_data.get(
-                "name",
-                ""
+    return parse_generated_content(
+        text,
+        article
+    )
+
+
+# ============================================================
+# PARSE GROQ CONTENT
+# ============================================================
+
+def parse_generated_content(
+    text,
+    article
+):
+
+    fields = {
+        "chinese_title": "",
+        "chinese_body": "",
+        "malay_title": "",
+        "malay_body": ""
+    }
+
+    current = None
+
+    for raw_line in text.splitlines():
+
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        upper = line.upper()
+
+        if upper.startswith(
+            "CHINESE_TITLE:"
+        ):
+
+            current = "chinese_title"
+
+            value = line.split(
+                ":",
+                1
+            )[1].strip()
+
+            fields[current] = value
+
+            continue
+
+        if upper.startswith(
+            "CHINESE_BODY:"
+        ):
+
+            current = "chinese_body"
+
+            value = line.split(
+                ":",
+                1
+            )[1].strip()
+
+            fields[current] = value
+
+            continue
+
+        if upper.startswith(
+            "MALAY_TITLE:"
+        ):
+
+            current = "malay_title"
+
+            value = line.split(
+                ":",
+                1
+            )[1].strip()
+
+            fields[current] = value
+
+            continue
+
+        if upper.startswith(
+            "MALAY_BODY:"
+        ):
+
+            current = "malay_body"
+
+            value = line.split(
+                ":",
+                1
+            )[1].strip()
+
+            fields[current] = value
+
+            continue
+
+        if current:
+
+            fields[current] += (
+                " " + line
             )
+
+    # --------------------------------------------------------
+    # Fallback
+    # --------------------------------------------------------
+
+    if not fields["chinese_title"]:
+
+        fields["chinese_title"] = clean_text(
+            article.get("title")
         )
 
-    else:
+    if not fields["chinese_body"]:
 
-        source = ""
+        fields["chinese_body"] = clean_text(
+            article.get("description")
+        )
 
-    english_body = description
+    if not fields["malay_title"]:
 
-    if len(english_body) < 100:
-        english_body = content
+        fields["malay_title"] = clean_text(
+            article.get("title")
+        )
 
-    if not english_body:
-        english_body = title
+    if not fields["malay_body"]:
 
-    english_body = truncate_text(
-        english_body,
-        700
-    )
+        fields["malay_body"] = clean_text(
+            article.get("description")
+        )
 
-    english_title = truncate_text(
-        title,
-        180
-    )
-
-    logger.info(
-        "======================================"
-    )
-
-    logger.info(
-        "ARGOS TRANSLATION START"
-    )
-
-    logger.info(
-        "Source: %s",
-        source
-    )
-
-    logger.info(
-        "English title: %s",
-        english_title
-    )
-
-    logger.info(
-        "======================================"
-    )
-
-    chinese_title = translate_text(
-        english_title,
-        "zh"
-    )
-
-    chinese_body = translate_text(
-        english_body,
-        "zh"
-    )
-
-    malay_title = translate_text(
-        english_title,
-        "ms"
-    )
-
-    malay_body = translate_text(
-        english_body,
-        "ms"
-    )
-
-    chinese_title = clean_text(
-        chinese_title
-    )
-
-    chinese_body = clean_text(
-        chinese_body
-    )
-
-    malay_title = clean_text(
-        malay_title
-    )
-
-    malay_body = clean_text(
-        malay_body
-    )
-
-    if not chinese_title:
-        chinese_title = english_title
-
-    if not chinese_body:
-        chinese_body = english_body
-
-    if not malay_title:
-        malay_title = english_title
-
-    if not malay_body:
-        malay_body = english_body
-
-    logger.info(
-        "ARGOS TRANSLATION COMPLETE"
-    )
-
-    return {
-        "chinese_title": chinese_title,
-        "chinese_body": chinese_body,
-        "malay_title": malay_title,
-        "malay_body": malay_body
-    }
+    return fields
 
 
 # ============================================================
@@ -1098,25 +815,19 @@ def build_news_message(
 
     message = (
         "🇲🇾 MYBuzz NEWS\n\n"
-
         "🇨🇳 "
         + content["chinese_title"]
         + "\n\n"
-
         + content["chinese_body"]
         + "\n\n"
-
         "🇲🇾 "
         + content["malay_title"]
         + "\n\n"
-
         + content["malay_body"]
         + "\n\n"
-
         "👉 点击阅读完整新闻\n"
         + url
         + "\n\n"
-
         "👉 Klik untuk baca berita penuh\n"
         + url
     )
@@ -1164,8 +875,7 @@ def wikipedia_search():
             data = response.json()
 
             results = (
-                data
-                .get("query", {})
+                data.get("query", {})
                 .get("search", [])
             )
 
@@ -1198,9 +908,7 @@ def wikipedia_search():
 # WIKIPEDIA ARTICLE
 # ============================================================
 
-def wikipedia_article(
-    title
-):
+def wikipedia_article(title):
 
     try:
 
@@ -1233,8 +941,7 @@ def wikipedia_article(
         data = response.json()
 
         pages = (
-            data
-            .get("query", {})
+            data.get("query", {})
             .get("pages", {})
         )
 
@@ -1248,23 +955,16 @@ def wikipedia_article(
                     "title",
                     title
                 ),
-
                 "extract": clean_text(
                     page.get(
                         "extract",
                         ""
                     )
                 ),
-
                 "url": page.get(
                     "fullurl",
                     "https://en.wikipedia.org/wiki/"
-                    + quote(
-                        title.replace(
-                            " ",
-                            "_"
-                        )
-                    )
+                    + quote(title.replace(" ", "_"))
                 )
             }
 
@@ -1303,6 +1003,7 @@ def generate_wiki_content():
     )
 
     if not article:
+
         return None
 
     logger.info(
@@ -1310,84 +1011,90 @@ def generate_wiki_content():
         article["title"]
     )
 
-    english_title = clean_text(
-        article["title"]
-    )
+    if not groq_client:
 
-    english_body = truncate_text(
-        article["extract"],
-        900
-    )
+        return None
 
-    if not english_body:
-        english_body = english_title
+    prompt = f"""
+You are the editor of MYBuzz NEWS.
 
-    chinese_title = translate_text(
-        english_title,
-        "zh"
-    )
+Create a short bilingual educational MYBuzz WIKI post based ONLY on the Wikipedia information below.
 
-    chinese_body = translate_text(
-        english_body,
-        "zh"
-    )
+The post should explain the topic in a simple way for Malaysian readers.
 
-    malay_title = translate_text(
-        english_title,
-        "ms"
-    )
+Do not invent information.
 
-    malay_body = translate_text(
-        english_body,
-        "ms"
-    )
+OUTPUT EXACTLY:
 
-    return {
-        "chinese_title": clean_text(
-            chinese_title
-        ),
-        "chinese_body": clean_text(
-            chinese_body
-        ),
-        "malay_title": clean_text(
-            malay_title
-        ),
-        "malay_body": clean_text(
-            malay_body
-        ),
-        "url": article["url"]
-    }
+CHINESE_TITLE:
+...
+
+CHINESE_BODY:
+...
+
+MALAY_TITLE:
+...
+
+MALAY_BODY:
+...
+
+TOPIC:
+{article["title"]}
+
+INFORMATION:
+{article["extract"][:5000]}
+"""
+
+    try:
+
+        response = groq_client.responses.create(
+            model=GROQ_MODEL,
+            input=prompt
+        )
+
+        content = parse_generated_content(
+            response.output_text,
+            {
+                "title": article["title"],
+                "description": article["extract"]
+            }
+        )
+
+        content["url"] = article["url"]
+
+        return content
+
+    except Exception as e:
+
+        logger.error(
+            "Wikipedia Groq generation failed: %s",
+            e
+        )
+
+        return None
 
 
 # ============================================================
 # BUILD WIKI TELEGRAM MESSAGE
 # ============================================================
 
-def build_wiki_message(
-    content
-):
+def build_wiki_message(content):
 
     message = (
         "🇲🇾 MYBuzz WIKI\n\n"
-
         "🇨🇳 "
         + content["chinese_title"]
         + "\n\n"
-
         + content["chinese_body"]
         + "\n\n"
-
         "🇲🇾 "
         + content["malay_title"]
         + "\n\n"
-
         + content["malay_body"]
         + "\n\n"
-
         "👉 点击阅读完整内容\n"
         + content["url"]
         + "\n\n"
-
         "👉 Klik untuk baca kandungan penuh\n"
         + content["url"]
     )
@@ -1499,10 +1206,7 @@ def test_telegram():
 
         logger.info(
             "Telegram bot OK: @%s",
-            bot.get(
-                "username",
-                ""
-            )
+            bot.get("username", "")
         )
 
         return True
@@ -1515,7 +1219,7 @@ def test_telegram():
 
 
 # ============================================================
-# SEND TELEGRAM
+# SEND TELEGRAM MESSAGE
 # ============================================================
 
 def send_telegram(
@@ -1555,8 +1259,7 @@ def send_telegram(
     if result.get("ok"):
 
         message_id = (
-            result
-            .get("result", {})
+            result.get("result", {})
             .get("message_id")
         )
 
@@ -1598,9 +1301,7 @@ def send_telegram(
 # NEWS PROCESS
 # ============================================================
 
-def process_news(
-    posted
-):
+def process_news(posted):
 
     logger.info(
         "Content mode: NEWS"
@@ -1622,6 +1323,7 @@ def process_news(
     )
 
     if not article:
+
         return False
 
     logger.info(
@@ -1631,38 +1333,21 @@ def process_news(
         )
     )
 
-    source_data = article.get(
-        "source",
-        {}
-    )
-
-    if isinstance(
-        source_data,
-        dict
-    ):
-
-        source_name = clean_text(
-            source_data.get(
-                "name",
-                ""
-            )
-        )
-
-    else:
-
-        source_name = ""
-
     logger.info(
         "Selected source: %s",
-        source_name
+        clean_text(
+            article.get("source", {}).get("name")
+            if isinstance(
+                article.get("source"),
+                dict
+            )
+            else ""
+        )
     )
 
     logger.info(
         "Selected image: %s",
-        article.get(
-            "image",
-            ""
-        )
+        article.get("image", "")
     )
 
     try:
@@ -1674,7 +1359,7 @@ def process_news(
     except Exception as e:
 
         logger.error(
-            "Argos news translation failed: %s",
+            "Groq news generation failed: %s",
             e
         )
 
@@ -1701,6 +1386,12 @@ def process_news(
     print(message)
     print()
 
+    # --------------------------------------------------------
+    # IMPORTANT
+    #
+    # Telegram MUST happen BEFORE posted.json.
+    # --------------------------------------------------------
+
     sent = send_telegram(
         message,
         TELEGRAM_CHANNEL_ID
@@ -1709,15 +1400,17 @@ def process_news(
     if not sent:
 
         logger.error(
-            "Telegram failed. "
-            "Article WILL NOT be added to posted.json."
+            "Telegram failed. Article WILL NOT be added to posted.json."
         )
 
         return False
 
-    aid = article_id(
-        article
-    )
+    # --------------------------------------------------------
+    # Telegram succeeded.
+    # Now save duplicate history.
+    # --------------------------------------------------------
+
+    aid = article_id(article)
 
     posted.setdefault(
         "items",
@@ -1730,10 +1423,7 @@ def process_news(
         "title": clean_text(
             article.get("title")
         ),
-        "url": article.get(
-            "url",
-            ""
-        ),
+        "url": article.get("url", ""),
         "posted_at": datetime.now(
             timezone.utc
         ).isoformat()
@@ -1750,9 +1440,7 @@ def process_news(
 # WIKI PROCESS
 # ============================================================
 
-def process_wiki(
-    posted
-):
+def process_wiki(posted):
 
     logger.info(
         "Content mode: WIKI"
@@ -1788,6 +1476,10 @@ def process_wiki(
     print(message)
     print()
 
+    # --------------------------------------------------------
+    # Telegram first.
+    # --------------------------------------------------------
+
     sent = send_telegram(
         message,
         TELEGRAM_WIKI_CHANNEL_ID
@@ -1800,6 +1492,10 @@ def process_wiki(
         )
 
         return False
+
+    # --------------------------------------------------------
+    # Save Wiki history only after Telegram success.
+    # --------------------------------------------------------
 
     wiki_id = hashlib.sha256(
         (
@@ -1821,9 +1517,7 @@ def process_wiki(
         "title": content[
             "chinese_title"
         ],
-        "url": content[
-            "url"
-        ],
+        "url": content["url"],
         "posted_at": datetime.now(
             timezone.utc
         ).isoformat()
@@ -1840,9 +1534,7 @@ def process_wiki(
 # CYCLE MODE
 # ============================================================
 
-def get_cycle_mode(
-    cycle
-):
+def get_cycle_mode(cycle):
 
     position = (
         cycle % CYCLE_LENGTH
@@ -1924,6 +1616,10 @@ def main():
         mode
     )
 
+    # --------------------------------------------------------
+    # Test Telegram BEFORE doing anything.
+    # --------------------------------------------------------
+
     if not test_telegram():
 
         logger.error(
@@ -1938,20 +1634,9 @@ def main():
             1
         )
 
-    try:
-
-        initialize_argos()
-
-    except Exception as e:
-
-        logger.error(
-            "Argos initialization failed: %s",
-            e
-        )
-
-        raise SystemExit(
-            1
-        )
+    # --------------------------------------------------------
+    # PROCESS
+    # --------------------------------------------------------
 
     success = False
 
@@ -1967,11 +1652,15 @@ def main():
             posted
         )
 
+    # --------------------------------------------------------
+    # IMPORTANT
+    #
+    # Only advance cycle when Telegram succeeded.
+    # --------------------------------------------------------
+
     if success:
 
-        posted["cycle"] = (
-            cycle + 1
-        )
+        posted["cycle"] = cycle + 1
 
         logger.info(
             "Cycle advanced to counter: %s",
@@ -1983,8 +1672,7 @@ def main():
         ):
 
             logger.error(
-                "WARNING: Telegram was successful "
-                "but posted.json could not be saved."
+                "WARNING: Telegram was successful but posted.json could not be saved."
             )
 
     else:
@@ -2011,6 +1699,7 @@ def main():
 
     logger.info(
         "======================================"
+
     )
 
     if success:
@@ -2045,4 +1734,5 @@ def main():
 # ============================================================
 
 if __name__ == "__main__":
+
     main()

@@ -665,12 +665,15 @@ URL:
 {url}
 """
 
-    response = groq_client.responses.create(
+    response = groq_client.chat.completions.create(
         model=GROQ_MODEL,
-        input=prompt
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that creates bilingual news content."},
+            {"role": "user", "content": prompt}
+        ]
     )
 
-    text = response.output_text.strip()
+    text = response.choices[0].message.content.strip()
 
     return parse_generated_content(
         text,
@@ -1050,13 +1053,16 @@ INFORMATION:
 
     try:
 
-        response = groq_client.responses.create(
+        response = groq_client.chat.completions.create(
             model=GROQ_MODEL,
-            input=prompt
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that creates bilingual educational content."},
+                {"role": "user", "content": prompt}
+            ]
         )
 
         content = parse_generated_content(
-            response.output_text,
+            response.choices[0].message.content.strip(),
             {
                 "title": article["title"],
                 "description": article["extract"]

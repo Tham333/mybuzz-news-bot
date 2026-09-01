@@ -24,6 +24,8 @@ from openai import OpenAI
 # 5 = NEWS
 # 6 = TRAVEL / FOOD
 #
+# 如果 NEWS 没有新内容，自动降级到 TRAVEL / FOOD
+#
 # GitHub Actions
 #       ↓
 # mybuzz_news_bot.py
@@ -34,9 +36,7 @@ from openai import OpenAI
 #       ↓
 # Groq AI
 #       ↓
-# Telegram Review
-#
-# NO APPS SCRIPT
+# Telegram
 #
 # ============================================================
 
@@ -76,9 +76,7 @@ GROQ_BASE_URL = (
     "https://api.groq.com/openai/v1"
 )
 
-GROQ_MODEL = (
-    "openai/gpt-oss-20b"
-)
+GROQ_MODEL = "llama-3.3-70b-versatile"  # 修正模型名称
 
 
 # ============================================================
@@ -1437,21 +1435,25 @@ JSON FORMAT:
   "zh_title": "...",
   "zh_body": "...",
   "ms_title": "...",
-  "ms_body": "...",
-  "category": "..."
+  "ms_body": "..."
 }}
 """
 
     try:
 
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model=GROQ_MODEL,
-            input=prompt
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that creates bilingual Malaysian content. Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ]
         )
 
         output = (
             response
-            .output_text
+            .choices[0]
+            .message
+            .content
             .strip()
         )
 
@@ -1482,7 +1484,6 @@ JSON FORMAT:
             "zh_body",
             "ms_title",
             "ms_body",
-            "category",
 
         ]
 
@@ -1523,6 +1524,18 @@ def build_caption(
     ai
 ):
 
+    # 根据类型选择标题前缀
+    content_type = article.get("type", "NEWS")
+    
+    if content_type == "NEWS":
+        prefix = "MYBuzz NEWS"
+    elif content_type == "Travel":
+        prefix = "MYBuzz TRAVEL"
+    elif content_type == "Food":
+        prefix = "MYBuzz FOOD"
+    else:
+        prefix = "MYBuzz NEWS"
+
     zh_title = escape_html(
         ai["zh_title"].strip()
     )
@@ -1544,29 +1557,21 @@ def build_caption(
         ""
     )
 
-    category = escape_html(
-        ai.get(
-            "category",
-            article.get(
-                "type",
-                "NEWS"
-            )
-        )
-    )
-
     caption = (
 
-        f"<b>🇲🇾 {category}</b>\n\n"
+        f"🇲🇾 {prefix}\n\n"
 
-        f"<b>🇨🇳 {zh_title}</b>\n"
+        f"🇨🇳 {zh_title}\n"
         f"{zh_body}\n\n"
 
-        f"<b>🇲🇾 {ms_title}</b>\n"
+        f"🇲🇾 {ms_title}\n"
         f"{ms_body}\n\n"
 
-        f"👉 <a href=\"{html.escape(link, quote=True)}\">"
-        f"阅读完整内容 / Baca selanjutnya"
-        f"</a>"
+        f"👉 点击阅读完整新闻\n"
+        f"{link}\n\n"
+
+        f"👉 Klik untuk baca berita penuh\n"
+        f"{link}"
 
     )
 
@@ -1809,7 +1814,22 @@ def main():
                 "No new Malaysia news with image available."
             )
 
-            return
+            # 降级到 TRAVEL / FOOD
+            logger.info(
+                "Falling back to TRAVEL / FOOD mode..."
+            )
+
+            article = fetch_travel_food(
+                posted_set
+            )
+
+            if not article:
+
+                logger.warning(
+                    "No new travel/food content with image available."
+                )
+
+                return
 
     # --------------------------------------------------------
     # TRAVEL / FOOD

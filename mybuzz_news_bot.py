@@ -1,15 +1,12 @@
 import os
 import json
-import time
-import hashlib
 import logging
+import hashlib
+import re
 import html
-from pathlib import Path
 from datetime import datetime, timezone
-from urllib.parse import quote
 
 import requests
-import feedparser
 from openai import OpenAI
 
 
@@ -17,79 +14,104 @@ from openai import OpenAI
 # MYBUZZ NEWS BOT
 # ============================================================
 #
-# FLOW
+# Schedule:
+#
+# 1 = NEWS
+# 2 = NEWS
+# 3 = TRAVEL / FOOD
+#
+# 4 = NEWS
+# 5 = NEWS
+# 6 = TRAVEL / FOOD
 #
 # GitHub Actions
 #       ↓
 # mybuzz_news_bot.py
 #       ↓
-# GNews
+# GNews / Wikimedia Commons
 #       ↓
-# Select NEW article
+# Duplicate Check
 #       ↓
-# Groq
+# Groq AI
 #       ↓
-# Chinese + Malay content
-#       ↓
-# TELEGRAM
-#       ↓
-# Telegram SUCCESS
-#       ↓
-# posted.json
+# Telegram Review
 #
-# CYCLE
-#
-# 1 = NEWS
-# 2 = NEWS
-# 3 = WIKI
-# 4 = NEWS
-# 5 = NEWS
-# 6 = WIKI
+# NO APPS SCRIPT
 #
 # ============================================================
 
 
+BOT_NAME = "MYBUZZ BOT"
+
+
 # ============================================================
-# CONFIG
+# ENVIRONMENT VARIABLES
 # ============================================================
 
-GNEWS_API_KEY = os.getenv("GNEWS_API_KEY", "").strip()
+GNEWS_API_KEY = os.environ.get("GNEWS_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-
-# 优先使用 TELEGRAM_CHANNEL_ID，如果没有则使用 TELEGRAM_CHAT_ID
-TELEGRAM_CHANNEL_ID = os.getenv(
-    "TELEGRAM_CHANNEL_ID",
-    os.getenv("TELEGRAM_CHAT_ID", "@mybuzzmy")
-).strip()
-
-TELEGRAM_WIKI_CHANNEL_ID = os.getenv(
-    "TELEGRAM_WIKI_CHANNEL_ID",
-    TELEGRAM_CHANNEL_ID
-).strip()
-
-GROQ_MODEL = os.getenv(
-    "GROQ_MODEL",
-    "llama-3.3-70b-versatile"
-).strip()
-
-POSTED_FILE = Path("posted.json")
-
-GNEWS_URL = "https://gnews.io/api/v4/search"
-
-WIKIPEDIA_API = (
-    "https://en.wikipedia.org/w/api.php"
+TELEGRAM_BOT_TOKEN = os.environ.get(
+    "TELEGRAM_BOT_TOKEN"
 )
+
+TELEGRAM_CHAT_ID = os.environ.get(
+    "TELEGRAM_CHAT_ID"
+)
+
+
+# ============================================================
+# API CONFIG
+# ============================================================
+
+GNEWS_BASE_URL = (
+    "https://gnews.io/api/v4"
+)
+
+WIKIMEDIA_API = (
+    "https://commons.wikimedia.org/w/api.php"
+)
+
+GROQ_BASE_URL = (
+    "https://api.groq.com/openai/v1"
+)
+
+GROQ_MODEL = (
+    "openai/gpt-oss-20b"
+)
+
+
+# ============================================================
+# STORAGE
+# ============================================================
+
+POSTED_FILE = "posted.json"
+STATE_FILE = "bot_state.json"
+
+
+# ============================================================
+# LIMITS
+# ============================================================
 
 REQUEST_TIMEOUT = 20
 
-MAX_POSTED_HISTORY = 500
+MAX_GNEWS_ARTICLES = 10
+MAX_WIKI_RESULTS = 15
 
-GNEWS_MAX_RESULTS = 10
+MAX_POSTED = 1000
 
-CYCLE_LENGTH = 3
+
+# ============================================================
+# HEADERS
+# ============================================================
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64) "
+        "MYBUZZ-News-Bot/1.0"
+    )
+}
 
 
 # ============================================================
@@ -101,91 +123,133 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-logger = logging.getLogger("MYBUZZ")
+logger = logging.getLogger(BOT_NAME)
 
 
 # ============================================================
-# HTTP SESSION
+# VALIDATION
 # ============================================================
 
-SESSION = requests.Session()
+if not GNEWS_API_KEY:
+    raise RuntimeError(
+        "GNEWS_API_KEY is missing."
+    )
 
-SESSION.headers.update({
-    "User-Agent": (
-        "MYBUZZ-News-Bot/2.0 "
-        "(https://github.com/Tham333/mybuzz-news-bot)"
-    ),
-    "Accept": "*/*"
-})
+if not GROQ_API_KEY:
+    raise RuntimeError(
+        "GROQ_API_KEY is missing."
+    )
 
+if not TELEGRAM_BOT_TOKEN:
+    raise RuntimeError(
+        "TELEGRAM_BOT_TOKEN is missing."
+    )
 
-# ============================================================
-# API CLIENT
-# ============================================================
-
-groq_client = None
-
-if GROQ_API_KEY:
-    groq_client = OpenAI(
-        api_key=GROQ_API_KEY,
-        base_url="https://api.groq.com/openai/v1"
+if not TELEGRAM_CHAT_ID:
+    raise RuntimeError(
+        "TELEGRAM_CHAT_ID is missing."
     )
 
 
 # ============================================================
-# CONFIG CHECK
+# GROQ CLIENT
 # ============================================================
 
-def check_config():
-
-    logger.info("Checking API configuration...")
-
-    missing = []
-
-    if not GNEWS_API_KEY:
-        missing.append("GNEWS_API_KEY")
-
-    if not GROQ_API_KEY:
-        missing.append("GROQ_API_KEY")
-
-    if not TELEGRAM_BOT_TOKEN:
-        missing.append("TELEGRAM_BOT_TOKEN")
-
-    if not TELEGRAM_CHANNEL_ID:
-        missing.append("TELEGRAM_CHANNEL_ID")
-
-    if missing:
-
-        logger.error(
-            "Missing environment variables: %s",
-            ", ".join(missing)
-        )
-
-        return False
-
-    logger.info("API configuration OK.")
-    logger.info("TELEGRAM_CHANNEL_ID: %s", TELEGRAM_CHANNEL_ID)
-    logger.info("TELEGRAM_WIKI_CHANNEL_ID: %s", TELEGRAM_WIKI_CHANNEL_ID)
-
-    return True
+client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url=GROQ_BASE_URL,
+)
 
 
 # ============================================================
-# POSTED DATABASE
+# CLEAN TEXT
+# ============================================================
+
+def clean_text(text):
+
+    if not text:
+        return ""
+
+    text = html.unescape(
+        str(text)
+    )
+
+    text = re.sub(
+        r"<[^>]+>",
+        " ",
+        text
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip()
+
+
+# ============================================================
+# NORMALIZE URL
+# ============================================================
+
+def normalize_url(url):
+
+    if not url:
+        return ""
+
+    url = str(url).strip()
+
+    url = url.split("#")[0]
+
+    return url
+
+
+# ============================================================
+# ARTICLE ID
+# ============================================================
+
+def article_id(article):
+
+    link = normalize_url(
+        article.get("link", "")
+    )
+
+    if link:
+
+        return hashlib.sha256(
+            link.encode("utf-8")
+        ).hexdigest()
+
+    title = clean_text(
+        article.get("title", "")
+    ).lower()
+
+    source = clean_text(
+        article.get("source", "")
+    ).lower()
+
+    raw = (
+        source
+        + "|"
+        + title
+    )
+
+    return hashlib.sha256(
+        raw.encode("utf-8")
+    ).hexdigest()
+
+
+# ============================================================
+# LOAD POSTED
 # ============================================================
 
 def load_posted():
 
-    if not POSTED_FILE.exists():
-
-        logger.info(
-            "posted.json not found. Creating new database."
-        )
-
-        return {
-            "items": [],
-            "cycle": 0
-        }
+    if not os.path.exists(
+        POSTED_FILE
+    ):
+        return []
 
     try:
 
@@ -197,131 +261,208 @@ def load_posted():
 
             data = json.load(f)
 
-        if isinstance(data, list):
+        if isinstance(
+            data,
+            list
+        ):
 
-            return {
-                "items": data,
-                "cycle": 0
-            }
+            return data
 
-        if not isinstance(data, dict):
+        if isinstance(
+            data,
+            dict
+        ):
 
-            return {
-                "items": [],
-                "cycle": 0
-            }
-
-        if "items" not in data:
-            data["items"] = []
-
-        if "cycle" not in data:
-            data["cycle"] = 0
-
-        return data
+            return data.get(
+                "posted",
+                []
+            )
 
     except Exception as e:
 
         logger.warning(
-            "Unable to read posted.json: %s",
+            "Could not read posted.json: %s",
             e
         )
 
-        return {
-            "items": [],
-            "cycle": 0
-        }
+    return []
 
 
 # ============================================================
-# SAVE POSTED DATABASE
+# SAVE POSTED
 # ============================================================
 
-def save_posted(data):
+def save_posted(posted):
 
     try:
 
-        items = data.get("items", [])
-
-        if len(items) > MAX_POSTED_HISTORY:
-
-            items = items[-MAX_POSTED_HISTORY:]
-
-        data["items"] = items
-
-        temp_file = POSTED_FILE.with_suffix(
-            ".json.tmp"
-        )
+        posted = posted[
+            -MAX_POSTED:
+        ]
 
         with open(
-            temp_file,
+            POSTED_FILE,
             "w",
             encoding="utf-8"
         ) as f:
 
             json.dump(
-                data,
+                posted,
                 f,
                 ensure_ascii=False,
                 indent=2
             )
 
-        temp_file.replace(POSTED_FILE)
+    except Exception as e:
 
-        logger.info(
-            "posted.json saved successfully."
+        logger.error(
+            "Could not save posted.json: %s",
+            e
         )
 
-        return True
+
+# ============================================================
+# LOAD STATE
+# ============================================================
+
+def load_state():
+
+    default_state = {
+        "counter": 0
+    }
+
+    if not os.path.exists(
+        STATE_FILE
+    ):
+        return default_state
+
+    try:
+
+        with open(
+            STATE_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
+
+        if isinstance(
+            data,
+            dict
+        ):
+
+            counter = data.get(
+                "counter",
+                0
+            )
+
+            try:
+
+                counter = int(
+                    counter
+                )
+
+            except Exception:
+
+                counter = 0
+
+            return {
+                "counter": counter
+            }
+
+    except Exception as e:
+
+        logger.warning(
+            "Could not read bot_state.json: %s",
+            e
+        )
+
+    return default_state
+
+
+# ============================================================
+# SAVE STATE
+# ============================================================
+
+def save_state(state):
+
+    try:
+
+        with open(
+            STATE_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                state,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
 
     except Exception as e:
 
         logger.error(
-            "Failed to save posted.json: %s",
+            "Could not save bot_state.json: %s",
             e
         )
 
-        return False
-
 
 # ============================================================
-# NORMALIZE TEXT
+# GET CONTENT MODE
 # ============================================================
 
-def clean_text(text):
+def get_next_mode():
 
-    if not text:
-        return ""
+    state = load_state()
 
-    text = str(text)
-
-    text = text.replace(
-        "\xa0",
-        " "
+    counter = state.get(
+        "counter",
+        0
     )
 
-    return " ".join(
-        text.split()
-    ).strip()
+    position = (
+        counter % 3
+    ) + 1
 
+    if position == 3:
 
-# ============================================================
-# ARTICLE ID
-# ============================================================
+        mode = "TRAVEL_FOOD"
 
-def article_id(article):
+    else:
 
-    source = (
-        article.get("url")
-        or article.get("title")
-        or ""
+        mode = "NEWS"
+
+    logger.info(
+        "Cycle position: %s / 3",
+        position
     )
 
-    return hashlib.sha256(
-        source.encode(
-            "utf-8",
-            errors="ignore"
-        )
-    ).hexdigest()
+    logger.info(
+        "Selected mode: %s",
+        mode
+    )
+
+    return mode, state
+
+
+# ============================================================
+# ADVANCE COUNTER
+# ============================================================
+
+def advance_counter(state):
+
+    counter = state.get(
+        "counter",
+        0
+    )
+
+    state["counter"] = (
+        int(counter) + 1
+    )
+
+    save_state(state)
 
 
 # ============================================================
@@ -330,26 +471,25 @@ def article_id(article):
 
 def gnews_request(params):
 
+    params = dict(params)
+
+    params["apikey"] = (
+        GNEWS_API_KEY
+    )
+
     try:
 
-        response = SESSION.get(
-            GNEWS_URL,
+        response = requests.get(
+            GNEWS_BASE_URL + "/search",
             params=params,
+            headers=HEADERS,
             timeout=REQUEST_TIMEOUT
         )
 
         logger.info(
-            "GNews HTTP status = %s",
+            "GNews HTTP status: %s",
             response.status_code
         )
-
-        if response.status_code == 429:
-
-            logger.warning(
-                "GNews rate limit reached."
-            )
-
-            return None
 
         if not response.ok:
 
@@ -358,9 +498,14 @@ def gnews_request(params):
                 response.text[:1000]
             )
 
-            return None
+            return []
 
-        return response.json()
+        data = response.json()
+
+        return data.get(
+            "articles",
+            []
+        )
 
     except Exception as e:
 
@@ -369,7 +514,7 @@ def gnews_request(params):
             e
         )
 
-        return None
+        return []
 
 
 # ============================================================
@@ -379,499 +524,377 @@ def gnews_request(params):
 def fetch_news():
 
     logger.info(
-        "Fetching Malaysia news from GNews..."
+        "Fetching Malaysia news..."
     )
 
-    queries = [
-        "Malaysia",
-        "Malaysia Kuala Lumpur",
-        "Malaysia government",
-        "Malaysia economy",
-        "Malaysia police",
-        "Malaysia education"
-    ]
+    params = {
 
-    all_articles = {}
+        "q": (
+            "Malaysia OR Malaysian"
+        ),
 
-    for index, query in enumerate(queries):
+        "lang": "en",
 
-        params = {
-            "q": query,
-            "lang": "en",
-            "country": "my",
-            "max": GNEWS_MAX_RESULTS,
-            "apikey": GNEWS_API_KEY
-        }
+        "country": "my",
 
-        result = gnews_request(params)
+        "max": MAX_GNEWS_ARTICLES,
 
-        if not result:
+    }
 
-            if index < len(queries) - 1:
+    articles = gnews_request(
+        params
+    )
 
-                time.sleep(1)
+    results = []
 
-            continue
+    for item in articles:
 
-        articles = result.get(
-            "articles",
-            []
+        title = clean_text(
+            item.get(
+                "title",
+                ""
+            )
         )
 
-        for article in articles:
+        description = clean_text(
+            item.get(
+                "description",
+                ""
+            )
+        )
 
-            title = clean_text(
-                article.get("title")
+        url = normalize_url(
+            item.get(
+                "url",
+                ""
+            )
+        )
+
+        image = normalize_url(
+            item.get(
+                "image",
+                ""
+            )
+        )
+
+        published_at = clean_text(
+            item.get(
+                "publishedAt",
+                ""
+            )
+        )
+
+        source_data = item.get(
+            "source",
+            {}
+        )
+
+        if isinstance(
+            source_data,
+            dict
+        ):
+
+            source = clean_text(
+                source_data.get(
+                    "name",
+                    ""
+                )
             )
 
-            url = (
-                article.get("url")
-                or ""
-            ).strip()
+        else:
 
-            if not title or not url:
-                continue
+            source = ""
 
-            key = url
+        if not title or not url:
+            continue
 
-            if key not in all_articles:
+        results.append({
 
-                all_articles[key] = article
+            "type": "NEWS",
 
-        # ----------------------------------------------------
-        # Avoid GNews 429
-        # ----------------------------------------------------
+            "source": (
+                source
+                or "GNews"
+            ),
 
-        if index < len(queries) - 1:
+            "title": title,
 
-            time.sleep(0.7)
+            "description":
+                description,
 
-    articles = list(
-        all_articles.values()
-    )
+            "link": url,
+
+            "image": image,
+
+            "publishedAt":
+                published_at,
+
+        })
 
     logger.info(
-        "Total unique GNews articles collected: %s",
-        len(articles)
+        "GNews usable articles: %s",
+        len(results)
     )
 
-    return articles
+    return results
 
 
 # ============================================================
-# FILTER MALAYSIA NEWS
+# FIND NEWS PAGE IMAGE
 # ============================================================
 
-MALAYSIA_KEYWORDS = [
-    "malaysia",
-    "malaysian",
-    "kuala lumpur",
-    "selangor",
-    "putrajaya",
-    "penang",
-    "johor",
-    "perak",
-    "kedah",
-    "kelantan",
-    "terengganu",
-    "pahang",
-    "melaka",
-    "malacca",
-    "negeri sembilan",
-    "sabah",
-    "sarawak",
-    "labuan",
-    "ringgit",
-    "anwar ibrahim",
-    "mat sabu",
-    "parliament",
-    "parlimen",
-    "pdrm",
-    "police malaysia",
-    "bank negara"
-]
+def find_image_from_page(url):
 
+    if not url:
+        return ""
 
-def is_malaysia_news(article):
+    try:
 
-    text = " ".join([
-        clean_text(article.get("title")),
-        clean_text(article.get("description")),
-        clean_text(
-            article.get("content")
+        response = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=REQUEST_TIMEOUT
         )
-    ]).lower()
 
-    return any(
-        keyword in text
-        for keyword in MALAYSIA_KEYWORDS
-    )
+        if not response.ok:
+            return ""
+
+        page = response.text
+
+        patterns = [
+
+            r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+
+            r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:image["\']',
+
+        ]
+
+        for pattern in patterns:
+
+            match = re.search(
+                pattern,
+                page,
+                re.IGNORECASE
+            )
+
+            if match:
+
+                image = html.unescape(
+                    match.group(1).strip()
+                )
+
+                if image.startswith(
+                    "http"
+                ):
+
+                    return image
+
+    except Exception as e:
+
+        logger.warning(
+            "News page image failed: %s",
+            e
+        )
+
+    return ""
 
 
 # ============================================================
-# SELECT NEW NEWS
+# SELECT NEWS
 # ============================================================
 
-def select_new_news(
-    articles,
-    posted
-):
+def select_news(posted_set):
 
-    posted_items = posted.get(
-        "items",
-        []
-    )
-
-    posted_ids = set()
-
-    for item in posted_items:
-
-        if isinstance(item, dict):
-
-            value = item.get("id")
-
-            if value:
-                posted_ids.add(value)
-
-        elif isinstance(item, str):
-
-            posted_ids.add(item)
-
-    candidates = []
+    articles = fetch_news()
 
     for article in articles:
 
-        if not is_malaysia_news(article):
-
-            continue
-
-        aid = article_id(article)
-
-        title = clean_text(
-            article.get("title")
-        )
-
-        if aid in posted_ids:
-
-            logger.info(
-                "Duplicate news skipped: %s",
-                title
-            )
-
-            continue
-
-        candidates.append(
+        aid = article_id(
             article
         )
 
-    if not candidates:
+        if aid in posted_set:
 
-        logger.warning(
-            "No new Malaysia news available."
-        )
-
-        return None
-
-    selected = candidates[0]
-
-    logger.info(
-        "NEW NEWS FOUND: %s",
-        clean_text(
-            selected.get("title")
-        )
-    )
-
-    return selected
-
-
-# ============================================================
-# GROQ CONTENT GENERATION
-# ============================================================
-
-def generate_news_content(article):
-
-    if not groq_client:
-
-        raise RuntimeError(
-            "Groq client is not configured."
-        )
-
-    title = clean_text(
-        article.get("title")
-    )
-
-    description = clean_text(
-        article.get("description")
-    )
-
-    source = clean_text(
-        article.get("source", {}).get("name")
-        if isinstance(
-            article.get("source"),
-            dict
-        )
-        else ""
-    )
-
-    url = (
-        article.get("url")
-        or ""
-    ).strip()
-
-    prompt = f"""
-You are the editor of MYBuzz NEWS, a bilingual Malaysia news channel.
-
-Create a concise bilingual Telegram news post from the article below.
-
-IMPORTANT:
-- Do NOT invent facts.
-- Do NOT add facts that are not supported by the article.
-- Chinese should be natural Simplified Chinese.
-- Malay should be natural Malaysian Malay.
-- Keep both versions short and readable.
-- Do not use markdown headings.
-- Do not use hashtags.
-- Do not include the source name in the article body.
-- Do not include URLs inside the generated body.
-- Chinese title should be concise.
-- Malay title should be concise.
-- Chinese summary: 1 short paragraph.
-- Malay summary: 1 short paragraph.
-
-OUTPUT EXACTLY IN THIS FORMAT:
-
-CHINESE_TITLE:
-...
-
-CHINESE_BODY:
-...
-
-MALAY_TITLE:
-...
-
-MALAY_BODY:
-...
-
-ARTICLE:
-{title}
-
-DESCRIPTION:
-{description}
-
-SOURCE:
-{source}
-
-URL:
-{url}
-"""
-
-    response = groq_client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that creates bilingual news content."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    text = response.choices[0].message.content.strip()
-
-    return parse_generated_content(
-        text,
-        article
-    )
-
-
-# ============================================================
-# PARSE GROQ CONTENT
-# ============================================================
-
-def parse_generated_content(
-    text,
-    article
-):
-
-    fields = {
-        "chinese_title": "",
-        "chinese_body": "",
-        "malay_title": "",
-        "malay_body": ""
-    }
-
-    current = None
-
-    for raw_line in text.splitlines():
-
-        line = raw_line.strip()
-
-        if not line:
-            continue
-
-        upper = line.upper()
-
-        if upper.startswith(
-            "CHINESE_TITLE:"
-        ):
-
-            current = "chinese_title"
-
-            value = line.split(
-                ":",
-                1
-            )[1].strip()
-
-            fields[current] = value
-
-            continue
-
-        if upper.startswith(
-            "CHINESE_BODY:"
-        ):
-
-            current = "chinese_body"
-
-            value = line.split(
-                ":",
-                1
-            )[1].strip()
-
-            fields[current] = value
-
-            continue
-
-        if upper.startswith(
-            "MALAY_TITLE:"
-        ):
-
-            current = "malay_title"
-
-            value = line.split(
-                ":",
-                1
-            )[1].strip()
-
-            fields[current] = value
-
-            continue
-
-        if upper.startswith(
-            "MALAY_BODY:"
-        ):
-
-            current = "malay_body"
-
-            value = line.split(
-                ":",
-                1
-            )[1].strip()
-
-            fields[current] = value
-
-            continue
-
-        if current:
-
-            fields[current] += (
-                " " + line
+            logger.info(
+                "Duplicate news skipped: %s",
+                article["title"]
             )
 
-    # --------------------------------------------------------
-    # Fallback
-    # --------------------------------------------------------
+            continue
 
-    if not fields["chinese_title"]:
-
-        fields["chinese_title"] = clean_text(
-            article.get("title")
+        image = article.get(
+            "image",
+            ""
         )
 
-    if not fields["chinese_body"]:
+        if not image:
 
-        fields["chinese_body"] = clean_text(
-            article.get("description")
-        )
+            logger.info(
+                "GNews has no image. Checking article page..."
+            )
 
-    if not fields["malay_title"]:
+            image = find_image_from_page(
+                article["link"]
+            )
 
-        fields["malay_title"] = clean_text(
-            article.get("title")
-        )
+        if not image:
 
-    if not fields["malay_body"]:
+            logger.warning(
+                "News has no image. Trying next article..."
+            )
 
-        fields["malay_body"] = clean_text(
-            article.get("description")
-        )
+            continue
 
-    return fields
+        article["image"] = image
+
+        return article
+
+    return None
 
 
 # ============================================================
-# BUILD NEWS TELEGRAM MESSAGE
+# TRAVEL / FOOD TOPICS
 # ============================================================
 
-def build_news_message(
-    content,
-    article
-):
+TRAVEL_FOOD_TOPICS = [
 
-    url = (
-        article.get("url")
-        or ""
-    ).strip()
+    {
+        "category": "Travel",
+        "title": "Kuala Lumpur",
+        "wiki": "Kuala Lumpur",
+        "search": "Kuala Lumpur Malaysia"
+    },
 
-    message = (
-        "🇲🇾 MYBuzz NEWS\n\n"
-        "🇨🇳 "
-        + content["chinese_title"]
-        + "\n\n"
-        + content["chinese_body"]
-        + "\n\n"
-        "🇲🇾 "
-        + content["malay_title"]
-        + "\n\n"
-        + content["malay_body"]
-        + "\n\n"
-        "👉 点击阅读完整新闻\n"
-        + url
-        + "\n\n"
-        "👉 Klik untuk baca berita penuh\n"
-        + url
-    )
+    {
+        "category": "Travel",
+        "title": "Penang",
+        "wiki": "Penang",
+        "search": "Penang Malaysia"
+    },
 
-    return message
+    {
+        "category": "Travel",
+        "title": "Langkawi",
+        "wiki": "Langkawi",
+        "search": "Langkawi Malaysia"
+    },
+
+    {
+        "category": "Travel",
+        "title": "Melaka",
+        "wiki": "Malacca",
+        "search": "Malacca Malaysia"
+    },
+
+    {
+        "category": "Travel",
+        "title": "Sabah",
+        "wiki": "Sabah",
+        "search": "Sabah Malaysia"
+    },
+
+    {
+        "category": "Travel",
+        "title": "Sarawak",
+        "wiki": "Sarawak",
+        "search": "Sarawak Malaysia"
+    },
+
+    {
+        "category": "Food",
+        "title": "Nasi Lemak",
+        "wiki": "Nasi lemak",
+        "search": "Nasi Lemak Malaysia"
+    },
+
+    {
+        "category": "Food",
+        "title": "Malaysian Cuisine",
+        "wiki": "Malaysian cuisine",
+        "search": "Malaysian food"
+    },
+
+    {
+        "category": "Food",
+        "title": "Penang Cuisine",
+        "wiki": "Penang cuisine",
+        "search": "Penang food Malaysia"
+    },
+
+    {
+        "category": "Food",
+        "title": "Satay",
+        "wiki": "Satay",
+        "search": "Satay Malaysia"
+    },
+
+    {
+        "category": "Food",
+        "title": "Roti Canai",
+        "wiki": "Roti canai",
+        "search": "Roti Canai Malaysia"
+    },
+
+    {
+        "category": "Food",
+        "title": "Laksa",
+        "wiki": "Laksa",
+        "search": "Laksa Malaysia"
+    },
+
+]
 
 
 # ============================================================
-# WIKIPEDIA SEARCH
+# FETCH WIKIVOYAGE / WIKIPEDIA CONTENT
 # ============================================================
 
-def wikipedia_search():
+def fetch_wiki_content(topic):
 
-    queries = [
-        "Malaysia",
-        "Kuala Lumpur",
-        "Putrajaya",
-        "Malaysian culture",
-        "History of Malaysia",
-        "States of Malaysia"
+    projects = [
+
+        (
+            "https://en.wikivoyage.org/w/api.php",
+            "Wikivoyage"
+        ),
+
+        (
+            "https://en.wikipedia.org/w/api.php",
+            "Wikipedia"
+        ),
+
     ]
 
-    for query in queries:
+    for api_url, project_name in projects:
+
+        params = {
+
+            "action": "query",
+
+            "prop": "extracts",
+
+            "exintro": "1",
+
+            "explaintext": "1",
+
+            "redirects": "1",
+
+            "titles": topic,
+
+            "format": "json",
+
+        }
 
         try:
 
-            params = {
-                "action": "query",
-                "list": "search",
-                "srsearch": query,
-                "format": "json",
-                "utf8": 1,
-                "srlimit": 5
-            }
-
-            response = SESSION.get(
-                WIKIPEDIA_API,
+            response = requests.get(
+                api_url,
                 params=params,
+                headers=HEADERS,
                 timeout=REQUEST_TIMEOUT
             )
 
@@ -880,30 +903,47 @@ def wikipedia_search():
 
             data = response.json()
 
-            results = (
-                data.get("query", {})
-                .get("search", [])
+            pages = (
+                data
+                .get("query", {})
+                .get("pages", {})
             )
 
-            if results:
+            for page in pages.values():
 
-                result = results[0]
-
-                return {
-                    "title": result.get(
-                        "title",
-                        ""
-                    ),
-                    "snippet": result.get(
-                        "snippet",
+                extract = clean_text(
+                    page.get(
+                        "extract",
                         ""
                     )
+                )
+
+                if len(extract) < 100:
+                    continue
+
+                return {
+
+                    "source":
+                        project_name,
+
+                    "title":
+                        clean_text(
+                            page.get(
+                                "title",
+                                topic
+                            )
+                        ),
+
+                    "content":
+                        extract[:6000],
+
                 }
 
         except Exception as e:
 
             logger.warning(
-                "Wikipedia search error: %s",
+                "%s failed: %s",
+                project_name,
                 e
             )
 
@@ -911,654 +951,804 @@ def wikipedia_search():
 
 
 # ============================================================
-# WIKIPEDIA ARTICLE
+# WIKIMEDIA IMAGE SEARCH
 # ============================================================
 
-def wikipedia_article(title):
+def search_wikimedia_images(
+    search_term,
+    limit=15
+):
+
+    logger.info(
+        "Wikimedia image search: %s",
+        search_term
+    )
+
+    params = {
+
+        "action": "query",
+
+        "generator": "search",
+
+        "gsrsearch":
+            search_term,
+
+        "gsrnamespace": "6",
+
+        "gsrlimit": limit,
+
+        "prop":
+            "imageinfo",
+
+        "iiprop":
+            "url|mime|size",
+
+        "format": "json",
+
+    }
 
     try:
 
-        params = {
-            "action": "query",
-            "prop": "extracts|info",
-            "exintro": 1,
-            "explaintext": 1,
-            "inprop": "url",
-            "titles": title,
-            "format": "json",
-            "redirects": 1
-        }
-
-        response = SESSION.get(
-            WIKIPEDIA_API,
+        response = requests.get(
+            WIKIMEDIA_API,
             params=params,
+            headers=HEADERS,
             timeout=REQUEST_TIMEOUT
         )
 
         if not response.ok:
 
-            logger.error(
-                "Wikipedia HTTP status = %s",
+            logger.warning(
+                "Wikimedia HTTP error: %s",
                 response.status_code
             )
 
-            return None
+            return []
 
         data = response.json()
 
         pages = (
-            data.get("query", {})
+            data
+            .get("query", {})
             .get("pages", {})
         )
 
+        results = []
+
         for page in pages.values():
 
-            if page.get("missing"):
+            info_list = page.get(
+                "imageinfo",
+                []
+            )
+
+            if not info_list:
                 continue
 
-            return {
-                "title": page.get(
-                    "title",
-                    title
-                ),
-                "extract": clean_text(
-                    page.get(
-                        "extract",
-                        ""
-                    )
-                ),
-                "url": page.get(
-                    "fullurl",
-                    "https://en.wikipedia.org/wiki/"
-                    + quote(title.replace(" ", "_"))
+            info = info_list[0]
+
+            image_url = info.get(
+                "url",
+                ""
+            )
+
+            mime = info.get(
+                "mime",
+                ""
+            )
+
+            width = info.get(
+                "width",
+                0
+            )
+
+            height = info.get(
+                "height",
+                0
+            )
+
+            if not image_url:
+                continue
+
+            if not mime.startswith(
+                "image/"
+            ):
+                continue
+
+            try:
+
+                width = int(
+                    width
                 )
-            }
+
+                height = int(
+                    height
+                )
+
+            except Exception:
+
+                width = 0
+                height = 0
+
+            if width < 600:
+                continue
+
+            if height < 300:
+                continue
+
+            results.append({
+
+                "title":
+                    clean_text(
+                        page.get(
+                            "title",
+                            ""
+                        )
+                    ),
+
+                "url":
+                    image_url,
+
+                "mime":
+                    mime,
+
+                "width":
+                    width,
+
+                "height":
+                    height,
+
+            })
+
+        logger.info(
+            "Wikimedia usable images: %s",
+            len(results)
+        )
+
+        return results
 
     except Exception as e:
 
-        logger.error(
-            "Wikipedia article error: %s",
+        logger.warning(
+            "Wikimedia image search failed: %s",
             e
         )
+
+        return []
+
+
+# ============================================================
+# CHOOSE IMAGE
+# ============================================================
+
+def choose_wikimedia_image(images):
+
+    if not images:
+        return None
+
+    landscape = []
+
+    for image in images:
+
+        width = image.get(
+            "width",
+            0
+        )
+
+        height = image.get(
+            "height",
+            0
+        )
+
+        if (
+            width >= 800
+            and height >= 400
+            and width >= height
+        ):
+
+            landscape.append(
+                image
+            )
+
+    if landscape:
+
+        landscape.sort(
+            key=lambda x:
+                x.get(
+                    "width",
+                    0
+                )
+                *
+                x.get(
+                    "height",
+                    0
+                ),
+            reverse=True
+        )
+
+        return landscape[0]
+
+    return images[0]
+
+
+# ============================================================
+# FIND TOPIC IMAGE
+# ============================================================
+
+def find_topic_image(topic):
+
+    searches = [
+
+        topic["search"],
+
+        topic["wiki"],
+
+        topic["title"] + " Malaysia",
+
+        topic["title"] + " Malaysia food",
+
+    ]
+
+    checked_urls = set()
+
+    for search_term in searches:
+
+        images = search_wikimedia_images(
+            search_term,
+            MAX_WIKI_RESULTS
+        )
+
+        for image in images:
+
+            image_url = image.get(
+                "url",
+                ""
+            )
+
+            if not image_url:
+                continue
+
+            if image_url in checked_urls:
+                continue
+
+            checked_urls.add(
+                image_url
+            )
+
+            selected = choose_wikimedia_image(
+                [image]
+            )
+
+            if selected:
+
+                logger.info(
+                    "Selected Wikimedia image: %s",
+                    selected["url"]
+                )
+
+                return selected["url"]
+
+    return ""
+
+
+# ============================================================
+# FETCH TRAVEL / FOOD
+# ============================================================
+
+def fetch_travel_food(posted_set):
+
+    logger.info(
+        "Searching Malaysia travel / food..."
+    )
+
+    state = load_state()
+
+    counter = state.get(
+        "counter",
+        0
+    )
+
+    start_index = (
+        counter
+        %
+        len(TRAVEL_FOOD_TOPICS)
+    )
+
+    ordered_topics = (
+        TRAVEL_FOOD_TOPICS[
+            start_index:
+        ]
+        +
+        TRAVEL_FOOD_TOPICS[
+            :start_index
+        ]
+    )
+
+    for topic in ordered_topics:
+
+        logger.info(
+            "Trying topic: %s",
+            topic["title"]
+        )
+
+        content = fetch_wiki_content(
+            topic["wiki"]
+        )
+
+        if not content:
+
+            logger.warning(
+                "No Wiki content: %s",
+                topic["wiki"]
+            )
+
+            continue
+
+        image_url = find_topic_image(
+            topic
+        )
+
+        if not image_url:
+
+            logger.warning(
+                "No image for %s. Trying next topic.",
+                topic["title"]
+            )
+
+            continue
+
+        wiki_name = (
+            topic["wiki"]
+            .replace(
+                " ",
+                "_"
+            )
+        )
+
+        link = (
+            "https://en.wikivoyage.org/wiki/"
+            + wiki_name
+        )
+
+        article = {
+
+            "type":
+                topic["category"],
+
+            "source":
+                content["source"],
+
+            "title":
+                topic["title"],
+
+            "description":
+                content["content"],
+
+            "link":
+                link,
+
+            "image":
+                image_url,
+
+            "publishedAt":
+                datetime.now(
+                    timezone.utc
+                ).isoformat(),
+
+            "topic":
+                topic["title"],
+
+        }
+
+        aid = article_id(
+            article
+        )
+
+        if aid in posted_set:
+
+            logger.info(
+                "Duplicate travel/food topic skipped: %s",
+                topic["title"]
+            )
+
+            continue
+
+        return article
 
     return None
 
 
 # ============================================================
-# GENERATE WIKI CONTENT
+# GENERATE AI CONTENT
 # ============================================================
 
-def generate_wiki_content():
+def generate_ai_content(article):
 
-    logger.info(
-        "Fetching Wikipedia topic..."
-    )
-
-    result = wikipedia_search()
-
-    if not result:
-
-        logger.warning(
-            "No Wikipedia topic found."
+    title = clean_text(
+        article.get(
+            "title",
+            ""
         )
-
-        return None
-
-    article = wikipedia_article(
-        result["title"]
     )
 
-    if not article:
-
-        return None
-
-    logger.info(
-        "Wikipedia topic selected: %s",
-        article["title"]
+    description = clean_text(
+        article.get(
+            "description",
+            ""
+        )
     )
 
-    if not groq_client:
+    source = clean_text(
+        article.get(
+            "source",
+            ""
+        )
+    )
 
-        return None
+    content_type = article.get(
+        "type",
+        "NEWS"
+    )
 
     prompt = f"""
-You are the editor of MYBuzz NEWS.
+You are the MYBUZZ Malaysia content editor.
 
-Create a short bilingual educational MYBuzz WIKI post based ONLY on the Wikipedia information below.
+Create one short bilingual Malaysian Telegram post.
 
-The post should explain the topic in a simple way for Malaysian readers.
+CONTENT TYPE:
+{content_type}
 
-Do not invent information.
+SOURCE:
+{source}
 
-OUTPUT EXACTLY:
+TITLE:
+{title}
 
-CHINESE_TITLE:
-...
+CONTENT:
+{description}
 
-CHINESE_BODY:
-...
+RULES:
 
-MALAY_TITLE:
-...
+1. Do NOT invent facts.
+2. Do NOT create fake prices.
+3. Do NOT create fake addresses.
+4. Do NOT create fake opening hours.
+5. Do NOT create fake ratings.
+6. Do NOT create fake statistics.
+7. Keep factual information accurate.
+8. Chinese must be Simplified Chinese.
+9. Malay must be natural Malaysian Malay.
+10. Chinese should be concise.
+11. Malay should be concise.
+12. Do not include URLs.
+13. Do not use Markdown.
+14. Do not use HTML.
+15. Do not add hashtags.
+16. Do not mention AI.
+17. For NEWS, preserve the original meaning.
+18. For TRAVEL, make the content useful to Malaysian readers.
+19. For FOOD, explain the food naturally and factually.
+20. Do not claim that a place is "the best" unless the source explicitly supports it.
+21. Return ONLY valid JSON.
 
-MALAY_BODY:
-...
+JSON FORMAT:
 
-TOPIC:
-{article["title"]}
-
-INFORMATION:
-{article["extract"][:5000]}
+{{
+  "zh_title": "...",
+  "zh_body": "...",
+  "ms_title": "...",
+  "ms_body": "...",
+  "category": "..."
+}}
 """
 
     try:
 
-        response = groq_client.chat.completions.create(
+        response = client.responses.create(
             model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that creates bilingual educational content."},
-                {"role": "user", "content": prompt}
-            ]
+            input=prompt
         )
 
-        content = parse_generated_content(
-            response.choices[0].message.content.strip(),
-            {
-                "title": article["title"],
-                "description": article["extract"]
-            }
+        output = (
+            response
+            .output_text
+            .strip()
         )
 
-        content["url"] = article["url"]
+        if output.startswith(
+            "```"
+        ):
 
-        return content
-
-    except Exception as e:
-
-        logger.error(
-            "Wikipedia Groq generation failed: %s",
-            e
-        )
-
-        return None
-
-
-# ============================================================
-# BUILD WIKI TELEGRAM MESSAGE
-# ============================================================
-
-def build_wiki_message(content):
-
-    message = (
-        "🇲🇾 MYBuzz WIKI\n\n"
-        "🇨🇳 "
-        + content["chinese_title"]
-        + "\n\n"
-        + content["chinese_body"]
-        + "\n\n"
-        "🇲🇾 "
-        + content["malay_title"]
-        + "\n\n"
-        + content["malay_body"]
-        + "\n\n"
-        "👉 点击阅读完整内容\n"
-        + content["url"]
-        + "\n\n"
-        "👉 Klik untuk baca kandungan penuh\n"
-        + content["url"]
-    )
-
-    return message
-
-
-# ============================================================
-# TELEGRAM API
-# ============================================================
-
-def telegram_api(
-    method,
-    payload
-):
-
-    url = (
-        "https://api.telegram.org/bot"
-        + TELEGRAM_BOT_TOKEN
-        + "/"
-        + method
-    )
-
-    try:
-
-        response = SESSION.post(
-            url,
-            json=payload,
-            timeout=REQUEST_TIMEOUT
-        )
-
-        logger.info(
-            "Telegram %s HTTP status = %s",
-            method,
-            response.status_code
-        )
-
-        try:
-
-            data = response.json()
-
-        except Exception:
-
-            data = {
-                "ok": False,
-                "description": response.text
-            }
-
-        if not response.ok:
-
-            logger.error(
-                "Telegram API ERROR: %s",
-                json.dumps(
-                    data,
-                    ensure_ascii=False
-                )
+            output = re.sub(
+                r"^```(?:json)?",
+                "",
+                output,
+                flags=re.IGNORECASE
             )
 
-            return data
+            output = re.sub(
+                r"```$",
+                "",
+                output
+            ).strip()
 
-        if not data.get("ok"):
+        data = json.loads(
+            output
+        )
 
-            logger.error(
-                "Telegram API returned ok=false: %s",
-                json.dumps(
-                    data,
-                    ensure_ascii=False
+        required = [
+
+            "zh_title",
+            "zh_body",
+            "ms_title",
+            "ms_body",
+            "category",
+
+        ]
+
+        for key in required:
+
+            if not data.get(key):
+
+                raise ValueError(
+                    f"Missing AI field: {key}"
                 )
-            )
-
-            return data
 
         return data
 
     except Exception as e:
 
         logger.error(
-            "Telegram request failed: %s",
+            "Groq AI failed: %s",
             e
         )
 
-        return {
-            "ok": False,
-            "description": str(e)
-        }
+        return None
 
 
 # ============================================================
-# TEST TELEGRAM
+# TELEGRAM CAPTION
 # ============================================================
 
-def test_telegram():
+def escape_html(text):
 
-    logger.info(
-        "Testing Telegram bot connection..."
+    return html.escape(
+        str(text),
+        quote=False
     )
 
-    result = telegram_api(
-        "getMe",
-        {}
-    )
 
-    if result.get("ok"):
-
-        bot = result.get(
-            "result",
-            {}
-        )
-
-        logger.info(
-            "Telegram bot OK: @%s",
-            bot.get("username", "")
-        )
-
-        return True
-
-    logger.error(
-        "Telegram bot test FAILED."
-    )
-
-    return False
-
-
-# ============================================================
-# SEND TELEGRAM MESSAGE
-# ============================================================
-
-def send_telegram(
-    message,
-    channel_id
+def build_caption(
+    article,
+    ai
 ):
 
-    logger.info(
-        "======================================"
+    zh_title = escape_html(
+        ai["zh_title"].strip()
     )
 
-    logger.info(
-        "TELEGRAM SEND START"
+    zh_body = escape_html(
+        ai["zh_body"].strip()
     )
 
-    logger.info(
-        "Telegram target = %s",
-        channel_id
+    ms_title = escape_html(
+        ai["ms_title"].strip()
     )
 
-    logger.info(
-        "Telegram message length = %s",
-        len(message)
+    ms_body = escape_html(
+        ai["ms_body"].strip()
     )
 
-    payload = {
-        "chat_id": channel_id,
-        "text": message,
-        "disable_web_page_preview": False
-    }
-
-    result = telegram_api(
-        "sendMessage",
-        payload
+    link = article.get(
+        "link",
+        ""
     )
 
-    if result.get("ok"):
-
-        message_id = (
-            result.get("result", {})
-            .get("message_id")
-        )
-
-        logger.info(
-            "TELEGRAM SEND SUCCESS"
-        )
-
-        logger.info(
-            "Telegram message_id = %s",
-            message_id
-        )
-
-        logger.info(
-            "======================================"
-        )
-
-        return True
-
-    logger.error(
-        "TELEGRAM SEND FAILED"
-    )
-
-    logger.error(
-        "Telegram response = %s",
-        json.dumps(
-            result,
-            ensure_ascii=False
-        )
-    )
-
-    logger.info(
-        "======================================"
-    )
-
-    return False
-
-
-# ============================================================
-# NEWS PROCESS
-# ============================================================
-
-def process_news(posted):
-
-    logger.info(
-        "Content mode: NEWS"
-    )
-
-    articles = fetch_news()
-
-    if not articles:
-
-        logger.warning(
-            "No GNews articles available."
-        )
-
-        return False
-
-    article = select_new_news(
-        articles,
-        posted
-    )
-
-    if not article:
-
-        return False
-
-    logger.info(
-        "Selected title: %s",
-        clean_text(
-            article.get("title")
-        )
-    )
-
-    logger.info(
-        "Selected source: %s",
-        clean_text(
-            article.get("source", {}).get("name")
-            if isinstance(
-                article.get("source"),
-                dict
+    category = escape_html(
+        ai.get(
+            "category",
+            article.get(
+                "type",
+                "NEWS"
             )
-            else ""
         )
     )
 
-    logger.info(
-        "Selected image: %s",
-        article.get("image", "")
+    caption = (
+
+        f"<b>🇲🇾 {category}</b>\n\n"
+
+        f"<b>🇨🇳 {zh_title}</b>\n"
+        f"{zh_body}\n\n"
+
+        f"<b>🇲🇾 {ms_title}</b>\n"
+        f"{ms_body}\n\n"
+
+        f"👉 <a href=\"{html.escape(link, quote=True)}\">"
+        f"阅读完整内容 / Baca selanjutnya"
+        f"</a>"
+
+    )
+
+    return caption
+
+
+# ============================================================
+# TELEGRAM SEND PHOTO
+# ============================================================
+
+def send_photo(
+    image_url,
+    caption
+):
+
+    api_url = (
+        "https://api.telegram.org/bot"
+        + TELEGRAM_BOT_TOKEN
+        + "/sendPhoto"
     )
 
     try:
 
-        content = generate_news_content(
-            article
+        response = requests.post(
+
+            api_url,
+
+            data={
+
+                "chat_id":
+                    TELEGRAM_CHAT_ID,
+
+                "photo":
+                    image_url,
+
+                "caption":
+                    caption,
+
+                "parse_mode":
+                    "HTML",
+
+            },
+
+            timeout=REQUEST_TIMEOUT
+
         )
+
+        logger.info(
+            "Telegram photo HTTP status: %s",
+            response.status_code
+        )
+
+        if response.ok:
+
+            logger.info(
+                "Telegram photo sent successfully."
+            )
+
+            return True
+
+        logger.error(
+            "Telegram photo failed: %s",
+            response.text[:2000]
+        )
+
+        return False
 
     except Exception as e:
 
         logger.error(
-            "Groq news generation failed: %s",
+            "Telegram photo exception: %s",
             e
         )
 
         return False
 
-    message = build_news_message(
-        content,
-        article
+
+# ============================================================
+# TELEGRAM SEND MESSAGE
+# ============================================================
+
+def send_message(
+    caption
+):
+
+    api_url = (
+        "https://api.telegram.org/bot"
+        + TELEGRAM_BOT_TOKEN
+        + "/sendMessage"
     )
 
-    logger.info(
-        "======================================"
-    )
+    try:
 
-    logger.info(
-        "MYBUZZ CONTENT READY"
-    )
+        response = requests.post(
 
-    logger.info(
-        "======================================"
-    )
+            api_url,
 
-    print()
-    print(message)
-    print()
+            data={
 
-    # --------------------------------------------------------
-    # IMPORTANT
-    #
-    # Telegram MUST happen BEFORE posted.json.
-    # --------------------------------------------------------
+                "chat_id":
+                    TELEGRAM_CHAT_ID,
 
-    sent = send_telegram(
-        message,
-        TELEGRAM_CHANNEL_ID
-    )
+                "text":
+                    caption,
 
-    if not sent:
+                "parse_mode":
+                    "HTML",
+
+                "disable_web_page_preview":
+                    False,
+
+            },
+
+            timeout=REQUEST_TIMEOUT
+
+        )
+
+        logger.info(
+            "Telegram message HTTP status: %s",
+            response.status_code
+        )
+
+        if response.ok:
+
+            logger.info(
+                "Telegram message sent successfully."
+            )
+
+            return True
 
         logger.error(
-            "Telegram failed. Article WILL NOT be added to posted.json."
+            "Telegram message failed: %s",
+            response.text[:2000]
         )
 
         return False
 
-    # --------------------------------------------------------
-    # Telegram succeeded.
-    # Now save duplicate history.
-    # --------------------------------------------------------
+    except Exception as e:
 
-    aid = article_id(article)
+        logger.error(
+            "Telegram message exception: %s",
+            e
+        )
 
-    posted.setdefault(
-        "items",
-        []
-    )
-
-    posted["items"].append({
-        "id": aid,
-        "type": "NEWS",
-        "title": clean_text(
-            article.get("title")
-        ),
-        "url": article.get("url", ""),
-        "posted_at": datetime.now(
-            timezone.utc
-        ).isoformat()
-    })
-
-    logger.info(
-        "Added article to duplicate history."
-    )
-
-    return True
+        return False
 
 
 # ============================================================
-# WIKI PROCESS
+# SEND TELEGRAM
 # ============================================================
 
-def process_wiki(posted):
+def send_to_telegram(
+    article,
+    ai
+):
 
-    logger.info(
-        "Content mode: WIKI"
+    caption = build_caption(
+        article,
+        ai
     )
 
-    content = generate_wiki_content()
+    image_url = article.get(
+        "image",
+        ""
+    )
 
-    if not content:
+    if image_url:
+
+        success = send_photo(
+            image_url,
+            caption
+        )
+
+        if success:
+            return True
 
         logger.warning(
-            "Unable to generate Wiki content."
+            "Photo failed. Falling back to text."
         )
 
-        return False
-
-    message = build_wiki_message(
-        content
-    )
-
-    logger.info(
-        "======================================"
-    )
-
-    logger.info(
-        "MYBUZZ CONTENT READY"
-    )
-
-    logger.info(
-        "======================================"
-    )
-
-    print()
-    print(message)
-    print()
-
-    # --------------------------------------------------------
-    # Telegram first.
-    # --------------------------------------------------------
-
-    sent = send_telegram(
-        message,
-        TELEGRAM_WIKI_CHANNEL_ID
-    )
-
-    if not sent:
-
-        logger.error(
-            "Wiki Telegram failed."
-        )
-
-        return False
-
-    # --------------------------------------------------------
-    # Save Wiki history only after Telegram success.
-    # --------------------------------------------------------
-
-    wiki_id = hashlib.sha256(
-        (
-            "WIKI:"
-            + content["url"]
-        ).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-
-    posted.setdefault(
-        "items",
-        []
-    )
-
-    posted["items"].append({
-        "id": wiki_id,
-        "type": "WIKI",
-        "title": content[
-            "chinese_title"
-        ],
-        "url": content["url"],
-        "posted_at": datetime.now(
-            timezone.utc
-        ).isoformat()
-    })
-
-    logger.info(
-        "Added Wiki article to duplicate history."
-    )
-
-    return True
-
-
-# ============================================================
-# CYCLE MODE
-# ============================================================
-
-def get_cycle_mode(cycle):
-
-    position = (
-        cycle % CYCLE_LENGTH
-    ) + 1
-
-    if position == 3:
-
-        return (
-            position,
-            "WIKI"
-        )
-
-    return (
-        position,
-        "NEWS"
+    return send_message(
+        caption
     )
 
 
@@ -1580,123 +1770,167 @@ def main():
         "======================================"
     )
 
-    if not check_config():
-
-        raise SystemExit(
-            1
-        )
+    # --------------------------------------------------------
+    # LOAD DATABASE
+    # --------------------------------------------------------
 
     posted = load_posted()
 
+    posted_set = set(
+        posted
+    )
+
     logger.info(
         "Posted database: %s items",
-        len(
-            posted.get(
-                "items",
-                []
-            )
-        )
-    )
-
-    cycle = int(
-        posted.get(
-            "cycle",
-            0
-        )
-    )
-
-    logger.info(
-        "Cycle counter: %s",
-        cycle
-    )
-
-    position, mode = get_cycle_mode(
-        cycle
-    )
-
-    logger.info(
-        "Cycle position: %s/%s",
-        position,
-        CYCLE_LENGTH
-    )
-
-    logger.info(
-        "Content mode: %s",
-        mode
+        len(posted)
     )
 
     # --------------------------------------------------------
-    # Test Telegram BEFORE doing anything.
+    # DETERMINE MODE
     # --------------------------------------------------------
 
-    if not test_telegram():
+    mode, state = get_next_mode()
 
-        logger.error(
-            "Telegram connection test failed."
-        )
-
-        logger.error(
-            "STOPPING BEFORE CONTENT GENERATION."
-        )
-
-        raise SystemExit(
-            1
-        )
+    article = None
 
     # --------------------------------------------------------
-    # PROCESS
+    # NEWS
     # --------------------------------------------------------
-
-    success = False
 
     if mode == "NEWS":
 
-        success = process_news(
-            posted
+        article = select_news(
+            posted_set
         )
 
-    elif mode == "WIKI":
+        if not article:
 
-        success = process_wiki(
-            posted
-        )
-
-    # --------------------------------------------------------
-    # IMPORTANT
-    #
-    # Only advance cycle when Telegram succeeded.
-    # --------------------------------------------------------
-
-    if success:
-
-        posted["cycle"] = cycle + 1
-
-        logger.info(
-            "Cycle advanced to counter: %s",
-            posted["cycle"]
-        )
-
-        if not save_posted(
-            posted
-        ):
-
-            logger.error(
-                "WARNING: Telegram was successful but posted.json could not be saved."
+            logger.warning(
+                "No new Malaysia news with image available."
             )
+
+            return
+
+    # --------------------------------------------------------
+    # TRAVEL / FOOD
+    # --------------------------------------------------------
 
     else:
 
-        logger.warning(
-            "Content was NOT successfully published."
+        article = fetch_travel_food(
+            posted_set
         )
 
-        logger.warning(
-            "Cycle will NOT advance."
+        if not article:
+
+            logger.warning(
+                "No new travel/food content with image available."
+            )
+
+            return
+
+    # --------------------------------------------------------
+    # LOG
+    # --------------------------------------------------------
+
+    logger.info(
+        "Selected type: %s",
+        article.get(
+            "type"
+        )
+    )
+
+    logger.info(
+        "Selected title: %s",
+        article.get(
+            "title"
+        )
+    )
+
+    logger.info(
+        "Selected source: %s",
+        article.get(
+            "source"
+        )
+    )
+
+    logger.info(
+        "Selected image: %s",
+        article.get(
+            "image"
+        )
+    )
+
+    # --------------------------------------------------------
+    # AI
+    # --------------------------------------------------------
+
+    ai = generate_ai_content(
+        article
+    )
+
+    if not ai:
+
+        logger.error(
+            "AI failed. Nothing sent."
         )
 
-        logger.warning(
-            "posted.json will NOT be changed."
+        return
+
+    logger.info(
+        "AI content generated."
+    )
+
+    # --------------------------------------------------------
+    # TELEGRAM
+    # --------------------------------------------------------
+
+    success = send_to_telegram(
+        article,
+        ai
+    )
+
+    if not success:
+
+        logger.error(
+            "Telegram send failed."
         )
+
+        # IMPORTANT:
+        # Do not advance counter.
+        # Do not mark as posted.
+
+        return
+
+    # --------------------------------------------------------
+    # MARK POSTED
+    # --------------------------------------------------------
+
+    aid = article_id(
+        article
+    )
+
+    if aid not in posted_set:
+
+        posted.append(
+            aid
+        )
+
+        save_posted(
+            posted
+        )
+
+    # --------------------------------------------------------
+    # ADVANCE CYCLE
+    # --------------------------------------------------------
+
+    advance_counter(
+        state
+    )
+
+    # --------------------------------------------------------
+    # FINISH
+    # --------------------------------------------------------
 
     logger.info(
         "======================================"
@@ -1707,35 +1941,18 @@ def main():
     )
 
     logger.info(
-        "======================================"
-
+        "Successfully sent: 1"
     )
 
-    if success:
-
-        logger.info(
-            "Type processed: %s",
-            mode
+    logger.info(
+        "Type: %s",
+        article.get(
+            "type"
         )
+    )
 
-        logger.info(
-            "Telegram publication: SUCCESS"
-        )
-
-    else:
-
-        logger.info(
-            "Type processed: %s",
-            mode
-        )
-
-        logger.info(
-            "Telegram publication: FAILED"
-        )
-
-        raise SystemExit(
-            1
-        )
+    logger.info(
+        "======================================")
 
 
 # ============================================================

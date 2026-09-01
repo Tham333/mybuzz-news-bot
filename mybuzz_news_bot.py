@@ -76,7 +76,7 @@ GROQ_BASE_URL = (
     "https://api.groq.com/openai/v1"
 )
 
-GROQ_MODEL = "llama3-70b-8192"  # 修正模型名称
+GROQ_MODEL = "mixtral-8x7b-32768"  # 修正模型名称
 
 
 # ============================================================

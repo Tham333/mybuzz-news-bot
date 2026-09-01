@@ -78,14 +78,12 @@ jobs:
             exit 1
           fi
 
-          # 检查 TELEGRAM_CHANNEL_ID（可能来自 TELEGRAM_CHAT_ID）
           if [ -z "$TELEGRAM_CHANNEL_ID" ]; then
             echo "ERROR: TELEGRAM_CHANNEL_ID is missing."
             echo "Please set TELEGRAM_CHANNEL_ID or TELEGRAM_CHAT_ID in secrets."
             exit 1
           fi
 
-          # 如果 TELEGRAM_WIKI_CHANNEL_ID 为空，使用 TELEGRAM_CHANNEL_ID
           if [ -z "$TELEGRAM_WIKI_CHANNEL_ID" ]; then
             echo "WARNING: TELEGRAM_WIKI_CHANNEL_ID is missing, using TELEGRAM_CHANNEL_ID"
             export TELEGRAM_WIKI_CHANNEL_ID="$TELEGRAM_CHANNEL_ID"

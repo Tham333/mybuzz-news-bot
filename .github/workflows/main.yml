@@ -34,19 +34,6 @@ jobs:
 
 
       # ============================================================
-      # CACHE ARGOS TRANSLATE MODELS
-      # ============================================================
-
-      - name: Cache Argos Translate Models
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/argos-translate
-          key: argos-translate-python312-v1
-          restore-keys: |
-            argos-translate-python312-
-
-
-      # ============================================================
       # INSTALL DEPENDENCIES
       # ============================================================
 
@@ -63,6 +50,7 @@ jobs:
       - name: Run MYBUZZ News Bot
         env:
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TELEGRAM_WIKI_CHANNEL_ID: ${{ secrets.TELEGRAM_WIKI_CHANNEL_ID }}
@@ -77,6 +65,11 @@ jobs:
 
           if [ -z "$GNEWS_API_KEY" ]; then
             echo "ERROR: GNEWS_API_KEY is missing."
+            exit 1
+          fi
+
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "ERROR: GROQ_API_KEY is missing."
             exit 1
           fi
 

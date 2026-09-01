@@ -1,3 +1,4 @@
+```yaml
 name: MYBUZZ News Bot
 
 on:
@@ -8,12 +9,23 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      contents: write
 
     steps:
 
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+
+      # ============================================================
+      # SETUP PYTHON
+      # ============================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -21,10 +33,20 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+
+      # ============================================================
+      # INSTALL DEPENDENCIES
+      # ============================================================
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+
+      # ============================================================
+      # RUN MYBUZZ NEWS BOT
+      # ============================================================
 
       - name: Run MYBUZZ News Bot
         env:
@@ -32,15 +54,84 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
 
         run: |
+
           echo "======================================"
           echo "MYBUZZ NEWS BOT START"
           echo "======================================"
+
+          echo "Checking API configuration..."
+
+          if [ -z "$GNEWS_API_KEY" ]; then
+            echo "ERROR: GNEWS_API_KEY is missing."
+            exit 1
+          fi
+
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "ERROR: GROQ_API_KEY is missing."
+            exit 1
+          fi
+
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "ERROR: TELEGRAM_BOT_TOKEN is missing."
+            exit 1
+          fi
+
+          if [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "ERROR: TELEGRAM_CHAT_ID is missing."
+            exit 1
+          fi
+
+          echo "API configuration OK."
 
           python mybuzz_news_bot.py
 
           echo "======================================"
           echo "MYBUZZ NEWS BOT FINISHED"
           echo "======================================"
+
+
+      # ============================================================
+      # SAVE DUPLICATE HISTORY
+      # ============================================================
+
+      - name: Save duplicate history
+        if: always()
+        run: |
+
+          echo "======================================"
+          echo "SAVE DUPLICATE HISTORY"
+          echo "======================================"
+
+          if [ -f posted.json ]; then
+
+            echo "posted.json found."
+
+            git config user.name "MYBUZZ News Bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add posted.json
+
+            if git diff --cached --quiet; then
+
+              echo "No duplicate history changes."
+
+            else
+
+              git commit -m "Update MYBUZZ duplicate history"
+
+              git push
+
+              echo "Duplicate history saved."
+
+            fi
+
+          else
+
+            echo "No posted.json found."
+
+          fi
+
+          echo "======================================"
+```

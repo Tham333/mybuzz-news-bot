@@ -76,7 +76,7 @@ GROQ_BASE_URL = (
     "https://api.groq.com/openai/v1"
 )
 
-GROQ_MODEL = "gemma2-9b-it"  # 修正模型名称
+GROQ_MODEL = "qwen/qwen3.6-27b"  # 修正模型名称
 
 
 # ============================================================

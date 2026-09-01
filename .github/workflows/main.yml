@@ -133,3 +133,42 @@ jobs:
           fi
 
           echo "======================================"
+
+
+      # ============================================================
+      # NOTIFY CLOUDFLARE WORKER
+      # ============================================================
+
+      - name: Notify Cloudflare Worker
+        if: always()
+        env:
+          CLOUDFLARE_WORKER_URL: ${{ secrets.CLOUDFLARE_WORKER_URL }}
+        run: |
+
+          echo "======================================"
+          echo "NOTIFY CLOUDFLARE WORKER"
+          echo "======================================"
+
+          if [ -z "$CLOUDFLARE_WORKER_URL" ]; then
+            echo "WARNING: CLOUDFLARE_WORKER_URL is missing. Skipping notification."
+            exit 0
+          fi
+
+          # 获取运行状态
+          if [ "${{ job.status }}" == "success" ]; then
+            STATUS="success"
+          else
+            STATUS="failed"
+          fi
+
+          echo "Job status: $STATUS"
+
+          # 发送通知到 Cloudflare Worker
+          curl -X POST "$CLOUDFLARE_WORKER_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"$STATUS\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"workflow\":\"main.yml\"}" \
+            --connect-timeout 10 \
+            --max-time 30 \
+            || echo "WARNING: Failed to notify Cloudflare Worker"
+
+          echo "======================================"

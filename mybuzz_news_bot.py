@@ -59,9 +59,10 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 
+# 优先使用 TELEGRAM_CHANNEL_ID，如果没有则使用 TELEGRAM_CHAT_ID
 TELEGRAM_CHANNEL_ID = os.getenv(
     "TELEGRAM_CHANNEL_ID",
-    "@mybuzzmy"
+    os.getenv("TELEGRAM_CHAT_ID", "@mybuzzmy")
 ).strip()
 
 TELEGRAM_WIKI_CHANNEL_ID = os.getenv(
@@ -163,6 +164,8 @@ def check_config():
         return False
 
     logger.info("API configuration OK.")
+    logger.info("TELEGRAM_CHANNEL_ID: %s", TELEGRAM_CHANNEL_ID)
+    logger.info("TELEGRAM_WIKI_CHANNEL_ID: %s", TELEGRAM_WIKI_CHANNEL_ID)
 
     return True
 

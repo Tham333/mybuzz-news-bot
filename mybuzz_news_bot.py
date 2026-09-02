@@ -27,7 +27,7 @@ REQUEST_TIMEOUT = 20
 
 MAX_GNEWS_ARTICLES = 10
 MAX_POSTED = 1000
-
+MAX_GNEWS_BATCHES = 5
 
 # ============================================================
 # GROQ CONFIG

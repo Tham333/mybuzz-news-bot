@@ -1092,7 +1092,6 @@ def validate_proper_nouns(
     if not terms:
         return True
 
-
     zh_text = (
         ai_data.get(
             "zh_title",
@@ -1104,7 +1103,6 @@ def validate_proper_nouns(
             ""
         )
     )
-
 
     ms_text = (
         ai_data.get(
@@ -1118,14 +1116,11 @@ def validate_proper_nouns(
         )
     )
 
-
     original_lower = (
         original_text.lower()
     )
 
-
     problems = []
-
 
     for original, translation in terms.items():
 
@@ -1133,28 +1128,28 @@ def validate_proper_nouns(
             original
         )
 
-
         translation_clean = clean_text(
             translation
         )
 
-
         if not original_clean:
             continue
 
-
-        # Only check terms actually appearing
-        # in the source article.
+        # ----------------------------------------------------
+        # Only validate terms that actually appear
+        # in the original article.
+        # ----------------------------------------------------
 
         if original_clean.lower() not in original_lower:
-
             continue
 
+        # ----------------------------------------------------
+        # KEEP ORIGINAL
+        # ----------------------------------------------------
 
-        # KEEP ORIGINAL terms
+        if translation_clean.upper() == "KEEP ORIGINAL":
 
-        if not translation_clean:
-
+            # Malay must preserve the original
             if (
                 original_clean.lower()
                 not in ms_text.lower()
@@ -1164,24 +1159,40 @@ def validate_proper_nouns(
                     f"{original_clean} should remain unchanged in Malay"
                 )
 
+            # Chinese must also preserve the original
+            if (
+                original_clean.lower()
+                not in zh_text.lower()
+            ):
+
+                problems.append(
+                    f"{original_clean} should remain unchanged in Chinese"
+                )
+
             continue
 
+        # ----------------------------------------------------
+        # NORMAL CHINESE TRANSLATION
+        # ----------------------------------------------------
 
-        # Chinese dictionary translation
+        if translation_clean:
 
-        if translation_clean not in zh_text:
+            if translation_clean not in zh_text:
 
-            problems.append(
-                f"{original_clean} -> {translation_clean} missing from Chinese output"
-            )
+                problems.append(
+                    f"{original_clean} -> "
+                    f"{translation_clean} missing from Chinese output"
+                )
 
+    # --------------------------------------------------------
+    # RESULT
+    # --------------------------------------------------------
 
     if problems:
 
         logger.warning(
             "Proper noun validation failed:"
         )
-
 
         for problem in problems[:20]:
 
@@ -1190,9 +1201,7 @@ def validate_proper_nouns(
                 problem
             )
 
-
         return False
-
 
     return True
 

@@ -23,33 +23,40 @@ REQUEST_TIMEOUT = 20
 MAX_GNEWS_ARTICLES = 10
 MAX_POSTED = 1000
 
+
 # ============================================================
-# GROQ
+# GROQ CONFIG
 # ============================================================
 
-# 只请求一次
-# 避免第一次已经消耗大量 TPM 后再次触发 429
+# 只请求一次。
+# 避免第一次请求消耗 TPM 后再次触发 429。
 MAX_AI_ATTEMPTS = 1
 
-# 降低输出 token
-AI_MAX_TOKENS = 700
+# GPT-OSS reasoning 会消耗 completion tokens。
+# 1200 给最终 JSON + reasoning 留出足够空间。
+AI_MAX_COMPLETION_TOKENS = 1200
+
+# 使用低 reasoning，减少不必要 token 消耗。
+AI_REASONING_EFFORT = "low"
 
 
 # ============================================================
 # PROMPT LIMITS
-#
-# 控制发送给 Groq 的内容大小
 # ============================================================
 
 MAX_TITLE_CHARS = 500
-MAX_DESCRIPTION_CHARS = 1800
-MAX_CONTENT_CHARS = 4000
+MAX_DESCRIPTION_CHARS = 1600
+MAX_CONTENT_CHARS = 3500
 
-MAX_TRANSLATION_RULE_CHARS = 1800
-MAX_NEWS_STRUCTURE_CHARS = 1200
-MAX_MALAY_STYLE_CHARS = 1400
-MAX_CHINESE_STYLE_CHARS = 1400
+MAX_TRANSLATION_RULE_CHARS = 1600
+MAX_NEWS_STRUCTURE_CHARS = 900
+MAX_MALAY_STYLE_CHARS = 1100
+MAX_CHINESE_STYLE_CHARS = 1100
 
+
+# ============================================================
+# FILES
+# ============================================================
 
 DATA_DIR = "."
 
@@ -787,7 +794,19 @@ def find_relevant_terms(
 
     seen = set()
 
-    for item in terms:
+    # 长词优先，避免短词先匹配。
+    sorted_terms = sorted(
+        terms,
+        key=lambda item: len(
+            item.get(
+                "source",
+                ""
+            )
+        ),
+        reverse=True
+    )
+
+    for item in sorted_terms:
 
         source = clean_text(
             item.get(
@@ -862,6 +881,9 @@ def build_terms_text(
 
 # ============================================================
 # VERBOSE RULE KEYS
+#
+# 这些通常是 examples / sample / reference。
+# 不需要发送给模型。
 # ============================================================
 
 VERBOSE_RULE_KEYS = {
@@ -891,7 +913,13 @@ VERBOSE_RULE_KEYS = {
     "sample",
     "samples",
     "SAMPLE",
-    "SAMPLES"
+    "SAMPLES",
+
+    "references",
+    "REFERENCES",
+
+    "reference",
+    "REFERENCE"
 }
 
 
@@ -900,8 +928,7 @@ VERBOSE_RULE_KEYS = {
 # ============================================================
 
 def compact_rule_value(
-    value,
-    depth=0
+    value
 ):
 
     if isinstance(
@@ -923,8 +950,7 @@ def compact_rule_value(
 
             compact_child = (
                 compact_rule_value(
-                    child,
-                    depth + 1
+                    child
                 )
             )
 
@@ -974,8 +1000,7 @@ def compact_rule_value(
 
                 compact_child = (
                     compact_rule_value(
-                        item,
-                        depth + 1
+                        item
                     )
                 )
 
@@ -1005,9 +1030,15 @@ def compact_rule_value(
 
 
 # ============================================================
-# BUILD RULE TEXT
+# COMPACT RULE TEXT
 #
-# 只发送必要规则，并限制字符数。
+# 不再单纯 text[:1200]。
+#
+# 会：
+# 1. 删除 examples/reference
+# 2. 删除空内容
+# 3. JSON 压缩
+# 4. 最后才做安全长度限制
 # ============================================================
 
 def build_rule_text(
@@ -1046,9 +1077,9 @@ def build_rule_text(
         return text
 
     print(
-        f"WARNING {category} rules "
-        f"too long: {len(text)} chars. "
-        f"Truncating to {max_chars}."
+        f"WARNING {category} rules still too long: "
+        f"{len(text)} chars. "
+        f"Reducing to {max_chars}."
     )
 
     return (
@@ -1059,8 +1090,6 @@ def build_rule_text(
 
 # ============================================================
 # SOURCE ARTICLE
-#
-# 限制发送给 Groq 的原文长度。
 # ============================================================
 
 def build_source_article(
@@ -1137,10 +1166,6 @@ def build_groq_prompt(
         )
     )
 
-    # ========================================================
-    # 只发送必要的 4 个规则类别
-    # ========================================================
-
     translation_rules = (
         build_rule_text(
             terms_data,
@@ -1181,21 +1206,18 @@ Rewrite the source article into:
 1. Natural Malaysian Chinese news.
 2. Natural Malaysian Malay news.
 
-IMPORTANT:
-- Preserve facts from the source.
+FACTUAL ACCURACY:
+- Preserve all important facts from the source.
 - Never invent facts.
 - Never invent names, places, organizations or numbers.
-- Do not add information not supported by the source.
-- Preserve uncertainty such as expected, may, could, according to, etc.
-- Use the dictionary mappings when applicable.
-- Chinese must sound like natural Malaysian Chinese news.
-- Malay must sound like natural Malaysian Malay news.
+- Never guess missing information.
+- Preserve uncertainty such as may, could, expected, according to, likely, etc.
+- Use dictionary mappings when applicable.
 - Do not use Indonesian Malay.
 - Avoid literal machine translation.
-- Keep the article concise.
-- If the source does not provide enough information, do not guess.
+- Keep both versions concise and natural.
 
-DICTIONARY TERMS:
+DICTIONARY:
 {terms_text}
 
 TRANSLATION RULES:
@@ -1213,25 +1235,25 @@ CHINESE STYLE:
 SOURCE ARTICLE:
 {source_article}
 
-RETURN ONLY VALID JSON:
+RETURN ONLY JSON:
 
 {{
-  "chinese_title": "Chinese news headline",
+  "chinese_title": "Chinese headline",
   "chinese_body": "Chinese news body",
-  "malay_title": "Malay news headline",
+  "malay_title": "Malay headline",
   "malay_body": "Malay news body"
 }}
 
-OUTPUT RULES:
+OUTPUT:
 - Valid JSON only.
 - No Markdown.
 - No code fence.
 - No explanation.
-- Chinese title: concise.
-- Malay title: concise.
+- Chinese title: concise Malaysian news headline.
+- Malay title: concise Malaysian news headline.
 - Chinese body: 2-3 sentences.
 - Malay body: 2-3 sentences.
-- Do not repeat the same sentence.
+- Do not repeat sentences.
 - Do not add unsupported facts.
 """
 
@@ -1376,23 +1398,6 @@ def validate_ai_fields(
 
 # ============================================================
 # PROPER NOUN VALIDATION
-#
-# 不要求每个词一定出现在 AI 输出。
-#
-# 例如：
-#
-# Malaysia -> 马来西亚
-#
-# 如果 AI 使用：
-# 马来西亚股市...
-#
-# 正确。
-#
-# 如果 AI 完全没有再次提到 Malaysia，
-# 也允许。
-#
-# 只有当 AI 把 Malaysia 原文直接留在中文里，
-# 才判定失败。
 # ============================================================
 
 def validate_proper_nouns(
@@ -1473,8 +1478,7 @@ def validate_proper_nouns(
             continue
 
         # ====================================================
-        # 如果 source == target
-        # 不需要翻译
+        # source == target
         # ====================================================
 
         if (
@@ -1485,12 +1489,11 @@ def validate_proper_nouns(
             continue
 
         # ====================================================
-        # 中文翻译
+        # Chinese target
         #
-        # 只检查：
-        # AI 有没有把英文 source 原样留在中文里面
+        # 不要求 target 必须出现。
         #
-        # 不要求 target 一定出现。
+        # 只禁止 AI 把英文 source 原样留在中文。
         # ====================================================
 
         if re.search(
@@ -1513,7 +1516,7 @@ def validate_proper_nouns(
             continue
 
         # ====================================================
-        # Malay
+        # Malay target
         # ====================================================
 
         if (
@@ -1539,58 +1542,6 @@ def validate_proper_nouns(
 # ============================================================
 # RATE LIMIT HELPERS
 # ============================================================
-
-def extract_retry_seconds(
-    error_text
-):
-
-    if not error_text:
-
-        return 30
-
-    patterns = [
-
-        r"try again in\s*"
-        r"([0-9]+(?:\.[0-9]+)?)s",
-
-        r"retry after\s*"
-        r"([0-9]+(?:\.[0-9]+)?)s",
-
-        r"in\s*"
-        r"([0-9]+(?:\.[0-9]+)?)"
-        r"\s*seconds"
-    ]
-
-    for pattern in patterns:
-
-        match = re.search(
-            pattern,
-            error_text,
-            re.IGNORECASE
-        )
-
-        if match:
-
-            try:
-
-                seconds = float(
-                    match.group(1)
-                )
-
-                return max(
-                    1,
-                    min(
-                        int(seconds) + 2,
-                        120
-                    )
-                )
-
-            except Exception:
-
-                pass
-
-    return 30
-
 
 def is_rate_limit_error(
     error_text
@@ -1678,6 +1629,10 @@ def generate_ai_content(
         )
     )
 
+    # ========================================================
+    # 找相关词
+    # ========================================================
+
     all_terms = flatten_terms(
         terms_data
     )
@@ -1707,6 +1662,10 @@ def generate_ai_content(
                 f'=> {item["target"]}'
             )
 
+    # ========================================================
+    # BUILD PROMPT
+    # ========================================================
+
     prompt = build_groq_prompt(
         article,
         relevant_terms,
@@ -1719,7 +1678,7 @@ def generate_ai_content(
     )
 
     # ========================================================
-    # 只请求一次
+    # GROQ REQUEST
     # ========================================================
 
     for attempt in range(
@@ -1740,6 +1699,7 @@ def generate_ai_content(
                 .chat
                 .completions
                 .create(
+
                     model=GROQ_MODEL,
 
                     messages=[
@@ -1751,7 +1711,19 @@ def generate_ai_content(
 
                     temperature=0.1,
 
-                    max_tokens=AI_MAX_TOKENS
+                    max_completion_tokens=(
+                        AI_MAX_COMPLETION_TOKENS
+                    ),
+
+                    reasoning_effort=(
+                        AI_REASONING_EFFORT
+                    ),
+
+                    include_reasoning=False,
+
+                    response_format={
+                        "type": "json_object"
+                    }
                 )
             )
 
@@ -1765,6 +1737,11 @@ def generate_ai_content(
                 None
             )
 
+            print(
+                f"Groq finish reason: "
+                f"{finish_reason}"
+            )
+
             raw_content = ""
 
             if choice.message:
@@ -1775,9 +1752,21 @@ def generate_ai_content(
                 )
 
             # =================================================
+            # EMPTY RESPONSE
+            # =================================================
+
+            if not raw_content:
+
+                print(
+                    "ERROR Groq returned empty content."
+                )
+
+                return None
+
+            # =================================================
             # MAX TOKEN
             #
-            # 不再 retry
+            # 不 retry。
             # =================================================
 
             if finish_reason in (
@@ -1787,12 +1776,12 @@ def generate_ai_content(
 
                 print(
                     "WARNING Groq response "
-                    "reached max_tokens."
+                    "reached completion token limit."
                 )
 
                 print(
-                    "AI output was incomplete. "
-                    "No retry to avoid TPM rate limit."
+                    "AI output incomplete. "
+                    "No retry."
                 )
 
                 return None
@@ -1809,6 +1798,11 @@ def generate_ai_content(
 
                 print(
                     "ERROR AI returned invalid JSON."
+                )
+
+                print(
+                    f"AI raw response: "
+                    f"{raw_content[:1000]}"
                 )
 
                 return None
@@ -1861,9 +1855,6 @@ def generate_ai_content(
 
             # =================================================
             # RATE LIMIT
-            #
-            # MAX_AI_ATTEMPTS = 1
-            # 所以这里不会再重复请求。
             # =================================================
 
             if is_rate_limit_error(
@@ -1871,12 +1862,11 @@ def generate_ai_content(
             ):
 
                 print(
-                    "ERROR Groq rate limit reached."
+                    "ERROR Groq TPM rate limit reached."
                 )
 
                 print(
-                    "No retry. "
-                    "This prevents another TPM hit."
+                    "No retry."
                 )
 
                 return None
@@ -1894,6 +1884,10 @@ def generate_ai_content(
                 )
 
                 return None
+
+            # =================================================
+            # OTHER ERROR
+            # =================================================
 
             return None
 

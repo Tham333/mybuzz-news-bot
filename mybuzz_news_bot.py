@@ -4,6 +4,7 @@ import logging
 import hashlib
 import re
 import html
+import time
 from datetime import datetime, timezone
 
 import requests
@@ -23,6 +24,8 @@ from openai import OpenAI
 # Duplicate Check
 #       ↓
 # Groq AI
+#       ↓
+# Proper Noun Validation
 #       ↓
 # Telegram
 #
@@ -82,6 +85,10 @@ MAX_GNEWS_ARTICLES = 10
 
 MAX_POSTED = 1000
 
+MAX_AI_ATTEMPTS = 3
+
+AI_MAX_TOKENS = 1200
+
 
 # ============================================================
 # HEADERS
@@ -136,10 +143,21 @@ if not TELEGRAM_CHAT_ID:
 # ============================================================
 # GROQ CLIENT
 # ============================================================
+#
+# max_retries=0
+#
+# 重要：
+# OpenAI SDK 默认会自动 retry 429。
+# 我们关闭 SDK 自动 retry，
+# 由 MYBUZZ 自己控制 retry，
+# 避免一次失败产生多次隐藏请求。
+#
+# ============================================================
 
 client = OpenAI(
     api_key=GROQ_API_KEY,
     base_url=GROQ_BASE_URL,
+    max_retries=0,
 )
 
 
@@ -507,6 +525,9 @@ def fetch_news():
             )
         )
 
+        # 防止过长 description 进入 AI prompt
+        description = description[:1500]
+
         url = normalize_url(
             item.get(
                 "url",
@@ -705,90 +726,223 @@ def select_news(posted_set):
 # ============================================================
 
 def load_terms():
-    if not os.path.exists(TERMS_FILE):
-        logger.warning("%s not found. Proper noun dictionary disabled.", TERMS_FILE)
-        return {}
-    try:
-        with open(TERMS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            return {}
-        return data
-    except Exception as e:
-        logger.warning("Could not read %s: %s", TERMS_FILE, e)
+
+    if not os.path.exists(
+        TERMS_FILE
+    ):
+
+        logger.warning(
+            "%s not found. Proper noun dictionary disabled.",
+            TERMS_FILE
+        )
+
         return {}
 
+    try:
+
+        with open(
+            TERMS_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
+
+        if not isinstance(
+            data,
+            dict
+        ):
+
+            return {}
+
+        return data
+
+    except Exception as e:
+
+        logger.warning(
+            "Could not read %s: %s",
+            TERMS_FILE,
+            e
+        )
+
+        return {}
+
+
+# ============================================================
+# FLATTEN TERMS
+# ============================================================
 
 def flatten_terms(data):
+
     flattened = {}
-    if not isinstance(data, dict):
+
+    if not isinstance(
+        data,
+        dict
+    ):
+
         return flattened
+
     for category, terms in data.items():
-        if not isinstance(terms, dict):
+
+        if not isinstance(
+            terms,
+            dict
+        ):
+
             continue
+
         for original, translation in terms.items():
-            original = clean_text(original)
-            translation = clean_text(translation)
+
+            original = clean_text(
+                original
+            )
+
+            translation = clean_text(
+                translation
+            )
+
             if not original:
                 continue
+
             if translation is None:
                 translation = ""
+
             flattened[original] = translation
+
     return flattened
 
 
+# ============================================================
+# BUILD TERMS TEXT
+# ============================================================
+
 def build_terms_text(data):
-    if not isinstance(data, dict):
-        return "No proper noun dictionary available."
+
+    if not isinstance(
+        data,
+        dict
+    ):
+
+        return (
+            "No proper noun dictionary available."
+        )
 
     blocks = []
+
     for category, terms in data.items():
-        if not isinstance(terms, dict) or not terms:
+
+        if not isinstance(
+            terms,
+            dict
+        ) or not terms:
+
             continue
-        lines = [f"[{str(category).upper()}]"]
+
+        lines = [
+            f"[{str(category).upper()}]"
+        ]
+
         for original, translation in terms.items():
-            original = clean_text(original)
-            translation = clean_text(translation)
+
+            original = clean_text(
+                original
+            )
+
+            translation = clean_text(
+                translation
+            )
+
             if not original:
                 continue
-            if not translation or translation.upper() == "KEEP ORIGINAL":
-                translation = "KEEP ORIGINAL"
-            lines.append(f"{original} = {translation}")
+
+            if (
+                not translation
+                or
+                translation.upper()
+                == "KEEP ORIGINAL"
+            ):
+
+                translation = (
+                    "KEEP ORIGINAL"
+                )
+
+            lines.append(
+                f"{original} = {translation}"
+            )
+
         if len(lines) > 1:
-            blocks.append("\n".join(lines))
 
-    return "\n\n".join(blocks) or "No proper noun dictionary available."
+            blocks.append(
+                "\n".join(lines)
+            )
+
+    return (
+        "\n\n".join(blocks)
+        or
+        "No proper noun dictionary available."
+    )
 
 
-def validate_proper_nouns(article, ai, terms):
-    flattened = flatten_terms(terms)
+# ============================================================
+# VALIDATE PROPER NOUNS
+# ============================================================
+
+def validate_proper_nouns(
+    article,
+    ai,
+    terms
+):
+
+    flattened = flatten_terms(
+        terms
+    )
 
     if not flattened:
         return True, ""
 
     article_text = clean_text(
-        str(article.get("title", "")) + " " +
-        str(article.get("description", ""))
+        str(article.get("title", ""))
+        + " "
+        + str(article.get("description", ""))
+        + " "
+        + str(article.get("content", ""))
     )
 
-    zh = clean_text(
-        ai.get("zh_title", "")
-    ) + " " + clean_text(
-        ai.get("zh_body", "")
+    zh = (
+        clean_text(
+            ai.get("zh_title", "")
+        )
+        + " "
+        + clean_text(
+            ai.get("zh_body", "")
+        )
     )
 
-    ms = clean_text(
-        ai.get("ms_title", "")
-    ) + " " + clean_text(
-        ai.get("ms_body", "")
+    ms = (
+        clean_text(
+            ai.get("ms_title", "")
+        )
+        + " "
+        + clean_text(
+            ai.get("ms_body", "")
+        )
     )
+
+    article_lower = article_text.lower()
+    ms_lower = ms.lower()
 
     errors = []
 
     for original, translation in flattened.items():
 
-        original = clean_text(original)
-        translation = clean_text(translation)
+        original = clean_text(
+            original
+        )
+
+        translation = clean_text(
+            translation
+        )
 
         if len(original) < 2:
             continue
@@ -796,48 +950,172 @@ def validate_proper_nouns(article, ai, terms):
         # ==================================================
         # 只检查原新闻实际出现过的专有名词
         # ==================================================
-        if original.lower() not in article_text.lower():
+
+        if original.lower() not in article_lower:
             continue
 
         # ==================================================
-        # Malay
+        # MALAY
         #
-        # 不再要求每一个原文专有名词都必须出现在摘要。
+        # 不再强制每个专有名词都必须出现在摘要。
         #
-        # 如果 AI 选择提到这个专有名词，
-        # 则必须保持原文。
+        # 如果 AI 使用了这个专有名词，
+        # 则保持原文即可。
         # ==================================================
-        if original.lower() in ms.lower():
+
+        if original.lower() in ms_lower:
             continue
 
         # ==================================================
-        # Chinese
+        # CHINESE
         #
-        # 如果 AI 没有提到这个专有名词，不报错。
+        # 如果 AI 没有提到这个专有名词，
+        # 不报错。
         #
-        # 如果 AI 提到了原文名称，
+        # 如果 AI 使用原文名称，
         # 但 dictionary 有正式中文翻译，
         # 则必须使用正式中文翻译。
         # ==================================================
+
         if original in zh:
-            if translation and translation.upper() != "KEEP ORIGINAL":
+
+            if (
+                translation
+                and
+                translation.upper()
+                != "KEEP ORIGINAL"
+            ):
+
                 if translation not in zh:
+
                     errors.append(
-                        f'Chinese used original instead of translation: '
-                        f'{original} -> {translation}'
+                        "Chinese used original "
+                        "instead of translation: "
+                        f"{original} -> {translation}"
                     )
 
         # ==================================================
         # KEEP ORIGINAL
         #
-        # 只有 AI 实际提到这个词时才检查，
-        # 不强制它一定出现在摘要。
+        # 不强制 AI 必须提到。
+        # 如果提到了，保持原文即可。
         # ==================================================
-        if translation.upper() == "KEEP ORIGINAL":
+
+        if (
+            translation.upper()
+            == "KEEP ORIGINAL"
+        ):
+
             continue
 
     if errors:
-        return False, " | ".join(errors[:12])
+
+        return (
+            False,
+            " | ".join(
+                errors[:12]
+            )
+        )
+
+    return True, ""
+
+
+# ============================================================
+# EXTRACT JSON
+# ============================================================
+
+def extract_json(text):
+
+    if not text:
+        return None
+
+    text = text.strip()
+
+    # Remove Markdown code fence
+    if text.startswith("```"):
+
+        text = re.sub(
+            r"^```(?:json)?\s*",
+            "",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        text = re.sub(
+            r"\s*```$",
+            "",
+            text
+        )
+
+    start = text.find(
+        "{"
+    )
+
+    end = text.rfind(
+        "}"
+    )
+
+    if (
+        start == -1
+        or
+        end == -1
+        or
+        end <= start
+    ):
+
+        return None
+
+    candidate = text[
+        start:end + 1
+    ]
+
+    try:
+
+        return json.loads(
+            candidate
+        )
+
+    except json.JSONDecodeError:
+
+        return None
+
+
+# ============================================================
+# VALIDATE AI FIELDS
+# ============================================================
+
+def validate_ai_fields(data):
+
+    if not isinstance(
+        data,
+        dict
+    ):
+
+        return False, "AI result is not an object."
+
+    required = [
+        "zh_title",
+        "zh_body",
+        "ms_title",
+        "ms_body",
+    ]
+
+    for key in required:
+
+        value = clean_text(
+            data.get(
+                key,
+                ""
+            )
+        )
+
+        if not value:
+
+            return False, (
+                f"Missing AI field: {key}"
+            )
+
+        data[key] = value
 
     return True, ""
 
@@ -847,12 +1125,37 @@ def validate_proper_nouns(article, ai, terms):
 # ============================================================
 
 def generate_ai_content(article):
-    title = clean_text(article.get("title", ""))
-    description = clean_text(article.get("description", ""))
-    source = clean_text(article.get("source", ""))
+
+    title = clean_text(
+        article.get(
+            "title",
+            ""
+        )
+    )
+
+    description = clean_text(
+        article.get(
+            "description",
+            ""
+        )
+    )
+
+    description = description[
+        :1500
+    ]
+
+    source = clean_text(
+        article.get(
+            "source",
+            ""
+        )
+    )
 
     terms_data = load_terms()
-    terms_text = build_terms_text(terms_data)
+
+    terms_text = build_terms_text(
+        terms_data
+    )
 
     prompt = f"""
 You are the MYBUZZ Malaysia news editor and a professional Malaysian Chinese/Malay news translator.
@@ -875,109 +1178,138 @@ MALAYSIA PROPER NOUN DICTIONARY
 {terms_text}
 
 ============================================================
-VERY IMPORTANT PROPER NOUN RULES
+PROPER NOUN RULES
 ============================================================
 
-1. Proper nouns are more important than literal translation.
-2. People names, place names, Malaysian states, cities, districts, government agencies, political parties, companies, brands, universities, hospitals, organisations, institutions, programmes and event names must be handled carefully.
-3. If the dictionary provides a Chinese translation, use that exact Chinese translation.
-4. If the dictionary says KEEP ORIGINAL, keep the original proper noun in Chinese.
-5. Never invent a Chinese name for a person, place, organisation, company or event.
-6. Never change, shorten, transliterate or creatively rewrite a proper noun unless the dictionary explicitly provides the translation.
-7. In Malay, keep Malaysian proper nouns in their original form whenever possible.
-8. Do not translate a Malaysian person's name as a Chinese name unless the dictionary explicitly provides one.
+1. Follow the dictionary exactly when a proper noun is used.
+2. If the dictionary provides a Chinese translation, use that exact translation.
+3. If the dictionary says KEEP ORIGINAL, keep the original name.
+4. Never invent Chinese names.
+5. Never creatively rewrite proper nouns.
+6. Malaysian people names normally remain in Roman letters unless the dictionary provides a Chinese name.
+7. Malaysian place names use the dictionary translation when available.
+8. In Malay, Malaysian proper nouns should remain in their original form.
+
+IMPORTANT:
+
+Do NOT force every proper noun from the source article into the short summary.
+
+Only mention proper nouns that are relevant to the summary.
+
+If you mention a proper noun, it MUST follow the dictionary.
 
 ============================================================
-CHINESE VERSION
+CHINESE
 ============================================================
 
-1. Write in natural Simplified Chinese used by Malaysian Chinese news media.
-2. Do NOT translate Malay word-by-word.
-3. Preserve the exact factual meaning.
-4. Headlines must be concise, natural and professional.
-5. Do not use awkward machine-translation wording.
-6. Use the full sentence context to determine meaning.
-7. Proper nouns must follow the dictionary exactly.
-8. Malaysian people's names should normally remain in Roman letters unless the dictionary provides a Chinese name.
-9. Malaysian place names should use the dictionary translation when available; otherwise keep the original Roman spelling rather than inventing a translation.
+1. Use natural Simplified Chinese used by Malaysian Chinese news media.
+2. Do not translate word by word.
+3. Preserve factual meaning.
+4. Keep the headline concise and professional.
+5. Use sentence context to determine meaning.
+6. Do not invent names.
+7. Do not add facts.
+8. Do not remove important facts.
+9. Natural Chinese is more important than literal translation.
 
 ============================================================
-MALAY VERSION
+MALAY
 ============================================================
 
-1. Write natural Malaysian Malay (Bahasa Melayu Malaysia).
-2. Do not translate English/Malay source text mechanically.
+1. Use natural Malaysian Malay.
+2. Do not translate mechanically.
 3. Keep names, places, organisations, companies and events accurate.
-4. Keep Malaysian proper nouns in their original form unless a standard Malay form is clearly required.
-5. The Malay headline must sound like a real Malaysian news headline.
+4. Keep Malaysian proper nouns in original form.
+5. Make the Malay headline sound like a real Malaysian news headline.
 
 ============================================================
-CONTEXTUAL TRANSLATION RULES
+CONTEXTUAL TRANSLATION
 ============================================================
 
-Natural translation is more important than word-for-word translation.
+Understand the complete sentence before translating.
 
-1. Do not translate individual Malay words first and then combine them.
-2. Understand the complete sentence and surrounding context before translating.
-3. Common Malay words can have different Chinese meanings depending on context.
-4. Never force one fixed Chinese meaning onto a common word when the sentence requires another meaning.
-5. If a literal Chinese translation sounds strange, unnatural or misleading, rewrite it naturally while preserving the original meaning.
-6. Do not add information that is not present in the source.
-7. Do not remove important factual information.
+Common Malay words can have different meanings depending on context.
 
-IMPORTANT EXAMPLES:
+For example:
 
-- "santai" does NOT always mean "轻松".
-- In a portrait, photo, painting, expression or appearance context, "santai" may mean "自然", "亲切", "随和", "非正式" or "神态轻松", depending on the sentence.
-- "Potret santai Tunku Abdul Rahman" should NOT be translated as "轻松的东姑肖像".
-- Better Chinese choices include "东姑阿都拉曼亲切肖像", "东姑阿都拉曼一幅神态自然的肖像" or "东姑阿都拉曼非正式肖像", depending on context.
-- "menarik tumpuan" may naturally mean "引起关注", "吸引关注", "成为焦点", "受到关注" or "成为亮点".
-- "menjadi tarikan utama" may naturally mean "成为主要亮点", "成为主要看点" or "成为焦点".
+"santai" does NOT always mean "轻松".
 
-Do not blindly copy these examples. Choose the most natural meaning according to the actual sentence.
+In a portrait, photo, painting, expression or appearance context, "santai" may mean:
+"自然", "亲切", "随和", "非正式" or "神态轻松".
+
+"Potret santai Tunku Abdul Rahman" should NOT automatically become:
+"轻松的东姑肖像".
+
+Choose the natural meaning according to context.
+
+"menarik tumpuan" may mean:
+"引起关注", "吸引关注", "成为焦点", "受到关注" or "成为亮点".
+
+"menjadi tarikan utama" may mean:
+"成为主要亮点", "成为主要看点" or "成为焦点".
+
+Do not blindly copy these examples.
 
 ============================================================
-TRANSLATION QUALITY CONTROL
+FACT CHECK
 ============================================================
 
 Before returning the answer, silently check:
 
-1. Are all people names correct?
-2. Are all Malaysian place names correct?
-3. Are organisations, companies, brands and events correct?
-4. Did you follow the proper noun dictionary exactly?
-5. Did you accidentally translate a proper noun into an invented Chinese name?
-6. Did you translate common Malay words according to context?
-7. Does the Chinese sound like natural Malaysian Chinese news writing?
-8. Does the Malay sound like natural Malaysian Malay news writing?
-9. Are dates, numbers, amounts and titles accurate?
-10. Did you preserve the original factual meaning?
-11. Did you add anything that was not in the source?
-12. Did you remove any important fact?
-13. Avoid awkward literal phrases such as "轻松的东姑肖像" when the context means a relaxed, natural or informal portrait.
+1. Names correct?
+2. Places correct?
+3. Companies correct?
+4. Organisations correct?
+5. Dates correct?
+6. Numbers correct?
+7. Money amounts correct?
+8. Meaning preserved?
+9. No invented facts?
+10. Natural Malaysian Chinese?
+11. Natural Malaysian Malay?
+12. Proper noun dictionary followed?
 
 ============================================================
-GENERAL RULES
+OUTPUT RULES
 ============================================================
 
-1. Do NOT invent facts.
-2. Do NOT speculate.
-3. Do NOT add opinions.
-4. Do NOT add information from outside the source.
-5. Chinese must be Simplified Chinese.
-6. Malay must be natural Malaysian Malay.
-7. Keep both versions short: 1-2 sentences each.
-8. Do not include URLs.
-9. Do not use Markdown.
-10. Do not add hashtags.
-11. Do not mention AI.
-12. Return ONLY valid JSON.
+Return ONLY ONE complete JSON object.
+
+Never return Markdown.
+
+Never return explanations.
+
+Never stop in the middle of a field.
+
+Never truncate a sentence.
+
+The JSON MUST end with }.
+
+Keep the content short.
+
+zh_title: maximum 35 Chinese characters.
+
+zh_body: maximum 120 Chinese characters.
+
+ms_title: maximum 100 characters.
+
+ms_body: maximum 300 characters.
+
+Use 1-2 short sentences for each body.
+
+Do not repeat information.
+
+Do not include URLs.
+
+Do not include hashtags.
+
+Do not mention AI.
 
 ============================================================
 OUTPUT
 ============================================================
 
-Return exactly this JSON object and nothing else:
+Return exactly:
 
 {{
   "zh_title": "...",
@@ -987,127 +1319,280 @@ Return exactly this JSON object and nothing else:
 }}
 """
 
-    max_attempts = 3
     last_error = ""
 
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(
+        1,
+        MAX_AI_ATTEMPTS + 1
+    ):
+
         try:
+
             current_prompt = prompt
+
             if attempt > 1:
+
                 current_prompt += f"""
 
 ============================================================
 RETRY CORRECTION
 ============================================================
 
-The previous output failed validation.
+The previous AI response failed.
 
-Validation error:
+Reason:
 {last_error}
 
-Correct ONLY the identified problems.
-Do not change factual information.
-Pay special attention to Malaysian proper nouns and contextual Malay-to-Chinese translation.
-Return ONLY the JSON object.
+IMPORTANT:
+
+The previous response may have been incomplete or truncated.
+
+Generate a MUCH SHORTER response.
+
+Do not repeat the previous incomplete response.
+
+Make sure every JSON string is complete.
+
+Make sure the final character is }.
+
+Keep:
+
+zh_title <= 35 Chinese characters
+zh_body <= 120 Chinese characters
+ms_title <= 100 characters
+ms_body <= 300 characters
+
+Return ONLY valid JSON.
 """
 
+            logger.info(
+                "Sending Groq request attempt %s/%s",
+                attempt,
+                MAX_AI_ATTEMPTS
+            )
+
             response = client.chat.completions.create(
-    model=GROQ_MODEL,
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a highly accurate Malaysian news editor and translation system. Return ONLY valid JSON."
-        },
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ],
-    temperature=0.1,
-    max_tokens=800,
-)
+
+                model=GROQ_MODEL,
+
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a highly accurate "
+                            "Malaysian news editor and "
+                            "translation system. "
+                            "Return ONLY valid JSON."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": current_prompt
+                    }
+                ],
+
+                temperature=0.1,
+
+                max_tokens=AI_MAX_TOKENS,
+            )
 
             output = (
-                response.choices[0].message.content or ""
+                response.choices[0].message.content
+                or ""
             ).strip()
+
+            finish_reason = getattr(
+                response.choices[0],
+                "finish_reason",
+                None
+            )
+
+            logger.info(
+                "Groq finish reason: %s",
+                finish_reason
+            )
 
             logger.info(
                 "Groq AI response attempt %s: %s",
                 attempt,
-                output[:1000]
+                output[:1500]
             )
 
-            json_match = re.search(
-                r"\{[^{}]*\}",
-                output,
-                re.DOTALL
-            )
-
-            if json_match:
-                output = json_match.group()
-            else:
-                start = output.find("{")
-                end = output.rfind("}") + 1
-                if start != -1 and end > start:
-                    output = output[start:end]
+            # ==================================================
+            # EMPTY RESPONSE
+            # ==================================================
 
             if not output:
-                raise ValueError("No JSON found in AI response")
 
-            data = json.loads(output)
+                raise ValueError(
+                    "Groq returned an empty response"
+                )
 
-            required = [
-                "zh_title",
-                "zh_body",
-                "ms_title",
-                "ms_body",
-            ]
+            # ==================================================
+            # DETECT TOKEN TRUNCATION
+            # ==================================================
 
-            for key in required:
-                value = clean_text(data.get(key, ""))
-                if not value:
-                    raise ValueError(
-                        f"Missing AI field: {key}"
-                    )
-                data[key] = value
+            if (
+                finish_reason
+                and
+                str(finish_reason).lower()
+                in (
+                    "length",
+                    "max_tokens"
+                )
+            ):
 
-            valid, error_message = validate_proper_nouns(
-                article,
-                data,
-                terms_data
+                raise ValueError(
+                    "AI output was truncated by token limit"
+                )
+
+            # ==================================================
+            # EXTRACT JSON
+            # ==================================================
+
+            data = extract_json(
+                output
+            )
+
+            if not data:
+
+                raise ValueError(
+                    "AI returned incomplete or invalid JSON"
+                )
+
+            # ==================================================
+            # VALIDATE FIELDS
+            # ==================================================
+
+            valid_fields, field_error = (
+                validate_ai_fields(
+                    data
+                )
+            )
+
+            if not valid_fields:
+
+                raise ValueError(
+                    field_error
+                )
+
+            # ==================================================
+            # PROPER NOUN VALIDATION
+            # ==================================================
+
+            valid, error_message = (
+                validate_proper_nouns(
+                    article,
+                    data,
+                    terms_data
+                )
             )
 
             if not valid:
+
                 last_error = error_message
+
                 logger.warning(
                     "Proper noun validation failed: %s",
                     error_message
                 )
+
                 continue
+
+            # ==================================================
+            # SUCCESS
+            # ==================================================
+
+            logger.info(
+                "AI content validation passed."
+            )
 
             return data
 
         except json.JSONDecodeError as e:
-            last_error = f"JSON decode error: {e}"
-            logger.error(last_error)
+
+            last_error = (
+                f"JSON decode error: {e}"
+            )
+
+            logger.error(
+                last_error
+            )
+
             logger.info(
                 "Raw output: %s",
-                output[:1000] if output else "(empty)"
+                output[:1500]
+                if output
+                else "(empty)"
             )
 
         except Exception as e:
+
             last_error = str(e)
+
+            error_text = str(e).lower()
+
+            # ==================================================
+            # GROQ RATE LIMIT
+            # ==================================================
+
+            if (
+                "429" in error_text
+                or
+                "rate limit" in error_text
+                or
+                "too many requests" in error_text
+            ):
+
+                if attempt < MAX_AI_ATTEMPTS:
+
+                    wait_time = (
+                        30 * attempt
+                    )
+
+                    logger.warning(
+                        "Groq rate limit reached. "
+                        "Waiting %s seconds before retry.",
+                        wait_time
+                    )
+
+                    time.sleep(
+                        wait_time
+                    )
+
+                    continue
+
             logger.error(
                 "Groq AI attempt %s failed: %s",
                 attempt,
                 e
             )
 
+            # ==================================================
+            # NORMAL ERROR RETRY
+            # ==================================================
+
+            if attempt < MAX_AI_ATTEMPTS:
+
+                wait_time = (
+                    5 * attempt
+                )
+
+                logger.info(
+                    "Retrying Groq in %s seconds...",
+                    wait_time
+                )
+
+                time.sleep(
+                    wait_time
+                )
+
     logger.error(
         "AI failed after %s attempts: %s",
-        max_attempts,
+        MAX_AI_ATTEMPTS,
         last_error
     )
+
     return None
 
 
@@ -1383,13 +1868,16 @@ def main():
     )
 
     # --------------------------------------------------------
-    # DETERMINE MODE
+    # MODE
     # --------------------------------------------------------
 
-    # 直接使用 NEWS 模式
     logger.info(
         "Selected mode: NEWS"
     )
+
+    # --------------------------------------------------------
+    # SELECT NEWS
+    # --------------------------------------------------------
 
     article = select_news(
         posted_set
@@ -1404,7 +1892,7 @@ def main():
         return
 
     # --------------------------------------------------------
-    # LOG
+    # LOG ARTICLE
     # --------------------------------------------------------
 
     logger.info(
@@ -1467,7 +1955,7 @@ def main():
             "Telegram send failed."
         )
 
-        # Do not mark as posted.
+        # 不标记为 posted
         return
 
     # --------------------------------------------------------

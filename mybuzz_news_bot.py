@@ -1283,7 +1283,7 @@ Never stop in the middle of a field.
 
 Never truncate a sentence.
 
-The JSON MUST end with }.
+The JSON MUST end with }}.
 
 Keep the content short.
 

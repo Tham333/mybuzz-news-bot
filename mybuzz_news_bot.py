@@ -25,7 +25,6 @@ MAX_POSTED = 1000
 
 MAX_AI_ATTEMPTS = 2
 
-# Increased because previous 900 tokens was too small
 AI_MAX_TOKENS = 1200
 
 DATA_DIR = "."
@@ -71,6 +70,7 @@ def clean_text(text):
 
     text = text.replace("\r", " ")
     text = text.replace("\n", " ")
+
     text = re.sub(r"\s+", " ", text)
 
     return text.strip()
@@ -82,13 +82,13 @@ def normalize_url(url):
 
     url = url.strip()
 
-    url = url.split("#")[0]
-
-    return url
+    return url.split("#")[0]
 
 
 def article_id(article):
-    url = normalize_url(article.get("url", ""))
+    url = normalize_url(
+        article.get("url", "")
+    )
 
     if url:
         return hashlib.sha256(
@@ -96,8 +96,13 @@ def article_id(article):
         ).hexdigest()
 
     raw = (
-        clean_text(article.get("title", "")) +
-        clean_text(article.get("description", ""))
+        clean_text(
+            article.get("title", "")
+        )
+        +
+        clean_text(
+            article.get("description", "")
+        )
     )
 
     return hashlib.sha256(
@@ -110,38 +115,50 @@ def article_id(article):
 # ============================================================
 
 def load_posted():
+
     if not os.path.exists(POSTED_FILE):
         return []
 
     try:
+
         with open(
             POSTED_FILE,
             "r",
             encoding="utf-8"
         ) as f:
+
             data = json.load(f)
 
         if isinstance(data, list):
             return data
 
         if isinstance(data, dict):
-            return data.get("posted", [])
+            return data.get(
+                "posted",
+                []
+            )
 
     except Exception as e:
-        print(f"WARNING failed to load posted.json: {e}")
+
+        print(
+            f"WARNING failed to load posted.json: {e}"
+        )
 
     return []
 
 
 def save_posted(posted):
+
     posted = posted[-MAX_POSTED:]
 
     try:
+
         with open(
             POSTED_FILE,
             "w",
             encoding="utf-8"
         ) as f:
+
             json.dump(
                 posted,
                 f,
@@ -150,7 +167,10 @@ def save_posted(posted):
             )
 
     except Exception as e:
-        print(f"ERROR saving posted.json: {e}")
+
+        print(
+            f"ERROR saving posted.json: {e}"
+        )
 
 
 # ============================================================
@@ -158,24 +178,31 @@ def save_posted(posted):
 # ============================================================
 
 def load_state():
+
     if not os.path.exists(STATE_FILE):
+
         return {
             "run_count": 0
         }
 
     try:
+
         with open(
             STATE_FILE,
             "r",
             encoding="utf-8"
         ) as f:
+
             data = json.load(f)
 
         if isinstance(data, dict):
             return data
 
     except Exception as e:
-        print(f"WARNING failed to load bot_state.json: {e}")
+
+        print(
+            f"WARNING failed to load bot_state.json: {e}"
+        )
 
     return {
         "run_count": 0
@@ -183,12 +210,15 @@ def load_state():
 
 
 def save_state(state):
+
     try:
+
         with open(
             STATE_FILE,
             "w",
             encoding="utf-8"
         ) as f:
+
             json.dump(
                 state,
                 f,
@@ -197,14 +227,21 @@ def save_state(state):
             )
 
     except Exception as e:
-        print(f"WARNING failed to save state: {e}")
+
+        print(
+            f"WARNING failed to save bot_state.json: {e}"
+        )
 
 
 def increase_run_counter():
+
     state = load_state()
 
     state["run_count"] = int(
-        state.get("run_count", 0)
+        state.get(
+            "run_count",
+            0
+        )
     ) + 1
 
     save_state(state)
@@ -217,31 +254,46 @@ def increase_run_counter():
 # ============================================================
 
 def check_config():
+
     missing = []
 
     if not GNEWS_API_KEY:
-        missing.append("GNEWS_API_KEY")
+        missing.append(
+            "GNEWS_API_KEY"
+        )
 
     if not GROQ_API_KEY:
-        missing.append("GROQ_API_KEY")
+        missing.append(
+            "GROQ_API_KEY"
+        )
 
     if not TELEGRAM_BOT_TOKEN:
-        missing.append("TELEGRAM_BOT_TOKEN")
+        missing.append(
+            "TELEGRAM_BOT_TOKEN"
+        )
 
     if not TELEGRAM_CHAT_ID:
-        missing.append("TELEGRAM_CHAT_ID")
+        missing.append(
+            "TELEGRAM_CHAT_ID"
+        )
 
     if missing:
+
         print(
             "ERROR Missing environment variables: "
             + ", ".join(missing)
         )
+
         return False
 
-    if not os.path.exists(TERMS_FILE):
+    if not os.path.exists(
+        TERMS_FILE
+    ):
+
         print(
             f"ERROR Missing {TERMS_FILE}"
         )
+
         return False
 
     return True
@@ -252,6 +304,7 @@ def check_config():
 # ============================================================
 
 def fetch_gnews():
+
     url = f"{GNEWS_BASE_URL}/search"
 
     params = {
@@ -263,6 +316,7 @@ def fetch_gnews():
     }
 
     try:
+
         response = requests.get(
             url,
             params=params,
@@ -277,15 +331,20 @@ def fetch_gnews():
 
         data = response.json()
 
-        articles = data.get("articles", [])
+        articles = data.get(
+            "articles",
+            []
+        )
 
         print(
-            f"GNews returned {len(articles)} articles"
+            f"GNews returned "
+            f"{len(articles)} articles"
         )
 
         return articles
 
     except Exception as e:
+
         print(
             f"ERROR GNews request failed: {e}"
         )
@@ -298,10 +357,12 @@ def fetch_gnews():
 # ============================================================
 
 def get_article_image(url):
+
     if not url:
         return ""
 
     try:
+
         response = requests.get(
             url,
             timeout=REQUEST_TIMEOUT,
@@ -328,23 +389,36 @@ def get_article_image(url):
         )
 
         if og_image:
-            content = og_image.get("content", "").strip()
+
+            content = (
+                og_image
+                .get("content", "")
+                .strip()
+            )
 
             if content:
                 return content
 
         twitter_image = soup.find(
             "meta",
-            attrs={"name": "twitter:image"}
+            attrs={
+                "name": "twitter:image"
+            }
         )
 
         if twitter_image:
-            content = twitter_image.get("content", "").strip()
+
+            content = (
+                twitter_image
+                .get("content", "")
+                .strip()
+            )
 
             if content:
                 return content
 
     except Exception as e:
+
         print(
             f"WARNING image extraction failed: {e}"
         )
@@ -356,36 +430,63 @@ def get_article_image(url):
 # SELECT NEWS
 # ============================================================
 
-def select_news(articles, posted):
+def select_news(
+    articles,
+    posted
+):
+
     posted_set = set(posted)
 
     for article in articles:
 
-        aid = article_id(article)
+        aid = article_id(
+            article
+        )
 
         if aid in posted_set:
             continue
 
         title = clean_text(
-            article.get("title", "")
+            article.get(
+                "title",
+                ""
+            )
         )
 
         description = clean_text(
-            article.get("description", "")
+            article.get(
+                "description",
+                ""
+            )
         )
 
         content = clean_text(
-            article.get("content", "")
+            article.get(
+                "content",
+                ""
+            )
         )
 
         url = normalize_url(
-            article.get("url", "")
+            article.get(
+                "url",
+                ""
+            )
         )
 
-        source = article.get("source", {}) or {}
+        source = (
+            article.get(
+                "source",
+                {}
+            )
+            or {}
+        )
 
         source_name = clean_text(
-            source.get("name", "")
+            source.get(
+                "name",
+                ""
+            )
         )
 
         if not title:
@@ -395,14 +496,22 @@ def select_news(articles, posted):
             continue
 
         image = (
-            article.get("image", "")
-            or get_article_image(url)
+            article.get(
+                "image",
+                ""
+            )
+            or get_article_image(
+                url
+            )
         )
 
         if not image:
+
             print(
-                f"Skipping without image: {title}"
+                f"Skipping without image: "
+                f"{title}"
             )
+
             continue
 
         article["_id"] = aid
@@ -415,7 +524,9 @@ def select_news(articles, posted):
 
         return article
 
-    print("No suitable new article found.")
+    print(
+        "No suitable new article found."
+    )
 
     return None
 
@@ -425,15 +536,22 @@ def select_news(articles, posted):
 # ============================================================
 
 def load_terms():
+
     try:
+
         with open(
             TERMS_FILE,
             "r",
             encoding="utf-8"
         ) as f:
+
             data = json.load(f)
 
-        if not isinstance(data, dict):
+        if not isinstance(
+            data,
+            dict
+        ):
+
             raise ValueError(
                 "malaysia_terms.json root must be object"
             )
@@ -441,6 +559,7 @@ def load_terms():
         return data
 
     except Exception as e:
+
         print(
             f"ERROR failed to load malaysia_terms.json: {e}"
         )
@@ -449,11 +568,7 @@ def load_terms():
 
 
 # ============================================================
-# TERM DICTIONARY
-#
-# IMPORTANT:
-# Python does NOT contain Malaysian names.
-# All names remain inside malaysia_terms.json.
+# TERM CATEGORIES
 # ============================================================
 
 NON_TERM_CATEGORIES = {
@@ -464,7 +579,12 @@ NON_TERM_CATEGORIES = {
 }
 
 
+# ============================================================
+# FLATTEN TERMS
+# ============================================================
+
 def flatten_terms(data):
+
     result = []
 
     for category, values in data.items():
@@ -472,12 +592,18 @@ def flatten_terms(data):
         if category in NON_TERM_CATEGORIES:
             continue
 
-        if not isinstance(values, dict):
+        if not isinstance(
+            values,
+            dict
+        ):
             continue
 
         for original, translated in values.items():
 
-            if isinstance(translated, str):
+            if isinstance(
+                translated,
+                str
+            ):
 
                 result.append({
                     "category": category,
@@ -488,43 +614,98 @@ def flatten_terms(data):
     return result
 
 
-def find_relevant_terms(article_text, terms):
-    article_text_lower = article_text.lower()
+# ============================================================
+# FIND RELEVANT TERMS
+#
+# Deduplicate identical source -> target mappings.
+# ============================================================
+
+def find_relevant_terms(
+    article_text,
+    terms
+):
+
+    article_text_lower = (
+        article_text.lower()
+    )
 
     matches = []
+    seen = set()
 
     for item in terms:
 
-        source = item["source"]
+        source = clean_text(
+            item.get(
+                "source",
+                ""
+            )
+        )
+
+        target = clean_text(
+            item.get(
+                "target",
+                ""
+            )
+        )
+
+        if not source:
+            continue
+
+        key = (
+            source.lower(),
+            target.lower()
+        )
+
+        if key in seen:
+            continue
 
         if source.lower() in article_text_lower:
 
-            matches.append(item)
+            matches.append(
+                item
+            )
+
+            seen.add(
+                key
+            )
 
     return matches
 
 
-def build_terms_text(relevant_terms):
+# ============================================================
+# BUILD TERMS TEXT
+# ============================================================
+
+def build_terms_text(
+    relevant_terms
+):
+
     if not relevant_terms:
-        return "No dictionary terms detected in this article."
+
+        return (
+            "No dictionary terms detected "
+            "in this article."
+        )
 
     lines = []
 
     for item in relevant_terms:
 
         lines.append(
-            f'{item["source"]} => {item["target"]}'
+            f'{item["source"]} => '
+            f'{item["target"]}'
         )
 
-    return "\n".join(lines)
+    return "\n".join(
+        lines
+    )
 
 
 # ============================================================
-# COMPACT JSON RULE EXTRACTION
+# VERBOSE RULE KEYS
 #
-# We keep the actual rules in malaysia_terms.json.
-# Python only removes verbose example/reference sections
-# which are not necessary for every AI request.
+# These are examples / reference material.
+# Actual rules remain inside malaysia_terms.json.
 # ============================================================
 
 VERBOSE_RULE_KEYS = {
@@ -532,21 +713,53 @@ VERBOSE_RULE_KEYS = {
     "example",
     "EXAMPLES",
     "Examples",
+
     "preferred_patterns",
     "PREFERRED_PATTERNS",
+
     "NEWS_RESTRUCTURING",
-    "news_restructuring"
+    "news_restructuring",
+
+    "context_rules",
+    "CONTEXT_RULES",
+
+    "translation_examples",
+    "TRANSLATION_EXAMPLES",
+
+    "bad_examples",
+    "BAD_EXAMPLES",
+
+    "good_examples",
+    "GOOD_EXAMPLES",
+
+    "sample",
+    "samples",
+    "SAMPLE",
+    "SAMPLES"
 }
 
 
-def compact_rule_value(value, depth=0):
-    if isinstance(value, dict):
+# ============================================================
+# COMPACT RULE VALUE
+# ============================================================
+
+def compact_rule_value(
+    value,
+    depth=0
+):
+
+    if isinstance(
+        value,
+        dict
+    ):
 
         result = {}
 
         for key, child in value.items():
 
-            if str(key) in VERBOSE_RULE_KEYS:
+            key_text = str(key)
+
+            if key_text in VERBOSE_RULE_KEYS:
                 continue
 
             compact_child = compact_rule_value(
@@ -560,30 +773,46 @@ def compact_rule_value(value, depth=0):
                 {},
                 []
             ):
+
                 continue
 
             result[key] = compact_child
 
         return result
 
-    if isinstance(value, list):
+    if isinstance(
+        value,
+        list
+    ):
 
         result = []
 
         for item in value:
 
-            if isinstance(item, str):
+            if isinstance(
+                item,
+                str
+            ):
 
-                text = clean_text(item)
+                text = clean_text(
+                    item
+                )
 
                 if text:
-                    result.append(text)
+                    result.append(
+                        text
+                    )
 
-            else:
+            elif isinstance(
+                item,
+                dict
+            ):
 
-                compact_child = compact_rule_value(
-                    item,
-                    depth + 1
+                compact_child = (
+                    compact_rule_value(
+                        item,
+                        depth + 1
+                    )
                 )
 
                 if compact_child not in (
@@ -592,29 +821,55 @@ def compact_rule_value(value, depth=0):
                     {},
                     []
                 ):
-                    result.append(compact_child)
+
+                    result.append(
+                        compact_child
+                    )
 
         return result
 
-    if isinstance(value, str):
+    if isinstance(
+        value,
+        str
+    ):
 
-        return clean_text(value)
+        return clean_text(
+            value
+        )
 
     return value
 
 
-def build_rule_text(data, category):
-    value = data.get(category)
+# ============================================================
+# BUILD RULE TEXT
+# ============================================================
+
+def build_rule_text(
+    data,
+    category
+):
+
+    value = data.get(
+        category
+    )
 
     if value is None:
-        return f"No {category} rules."
 
-    compacted = compact_rule_value(value)
+        return (
+            f"No {category} rules."
+        )
+
+    compacted = compact_rule_value(
+        value
+    )
 
     return json.dumps(
         compacted,
         ensure_ascii=False,
-        separators=(",", ":")
+        separators=(
+            ",",
+            ":"
+        )
     )
 
 
@@ -622,25 +877,43 @@ def build_rule_text(data, category):
 # SOURCE ARTICLE
 # ============================================================
 
-def build_source_article(article):
+def build_source_article(
+    article
+):
+
     title = clean_text(
-        article.get("title", "")
+        article.get(
+            "title",
+            ""
+        )
     )
 
     description = clean_text(
-        article.get("description", "")
+        article.get(
+            "description",
+            ""
+        )
     )
 
     content = clean_text(
-        article.get("content", "")
+        article.get(
+            "content",
+            ""
+        )
     )
 
     source = clean_text(
-        article.get("_source_name", "")
+        article.get(
+            "_source_name",
+            ""
+        )
     )
 
     url = normalize_url(
-        article.get("url", "")
+        article.get(
+            "url",
+            ""
+        )
     )
 
     return (
@@ -661,50 +934,68 @@ def build_groq_prompt(
     relevant_terms,
     terms_data
 ):
-    source_article = build_source_article(
-        article
+
+    source_article = (
+        build_source_article(
+            article
+        )
     )
 
-    terms_text = build_terms_text(
-        relevant_terms
+    terms_text = (
+        build_terms_text(
+            relevant_terms
+        )
     )
 
-    translation_rules = build_rule_text(
-        terms_data,
-        "TRANSLATION_RULES"
+    translation_rules = (
+        build_rule_text(
+            terms_data,
+            "TRANSLATION_RULES"
+        )
     )
 
-    news_structure = build_rule_text(
-        terms_data,
-        "NEWS_STRUCTURE"
+    news_structure = (
+        build_rule_text(
+            terms_data,
+            "NEWS_STRUCTURE"
+        )
     )
 
-    malay_style = build_rule_text(
-        terms_data,
-        "MALAY_STYLE"
+    malay_style = (
+        build_rule_text(
+            terms_data,
+            "MALAY_STYLE"
+        )
     )
 
-    chinese_style = build_rule_text(
-        terms_data,
-        "CHINESE_STYLE"
+    chinese_style = (
+        build_rule_text(
+            terms_data,
+            "CHINESE_STYLE"
+        )
     )
 
     prompt = f"""
 You are a professional Malaysian news editor and bilingual translator.
 
-Your task:
-1. Rewrite the source article into natural Malaysian Chinese news.
-2. Rewrite the same source article into natural Malaysian Malay news.
-3. Preserve every factual detail.
-4. Do not invent facts.
-5. Do not invent names, places, organizations or numbers.
-6. Preserve uncertainty such as "expected", "may", "according to", etc.
-7. Use the dictionary below whenever a matching source term appears.
-8. Chinese must sound like Malaysian Chinese news, not literal machine translation.
-9. Malay must sound like natural Malaysian news language, not Indonesian Malay.
-10. Return ONLY valid JSON.
+TASK:
+Rewrite the source article into:
+1. Natural Malaysian Chinese news.
+2. Natural Malaysian Malay news.
 
-IMPORTANT DICTIONARY:
+FACTUAL ACCURACY:
+- Preserve all facts from the source.
+- Never invent facts.
+- Never invent names, places, organizations or numbers.
+- Preserve uncertainty such as expected, may, could, according to, etc.
+- Do not change the meaning.
+- Use dictionary mappings when applicable.
+- Chinese must sound natural in Malaysian Chinese news style.
+- Malay must sound natural in Malaysian Malay news style.
+- Avoid literal machine translation.
+- Avoid Indonesian Malay.
+
+DICTIONARY:
 {terms_text}
 
 TRANSLATION RULES:
@@ -722,7 +1013,7 @@ CHINESE STYLE:
 SOURCE ARTICLE:
 {source_article}
 
-OUTPUT FORMAT:
+RETURN ONLY THIS JSON:
 {{
   "chinese_title": "Chinese news headline",
   "chinese_body": "Chinese news body",
@@ -730,16 +1021,16 @@ OUTPUT FORMAT:
   "malay_body": "Malay news body"
 }}
 
-OUTPUT REQUIREMENTS:
+OUTPUT RULES:
 - Valid JSON only.
 - No Markdown.
 - No code fence.
 - No explanation.
-- chinese_title: one concise news headline.
-- malay_title: one concise news headline.
-- chinese_body: concise news article, normally 2-4 sentences.
-- malay_body: concise news article, normally 2-4 sentences.
-- Do not add information that is not supported by the source.
+- Chinese title: concise news headline.
+- Malay title: concise news headline.
+- Chinese body: normally 2-4 sentences.
+- Malay body: normally 2-4 sentences.
+- Do not add unsupported information.
 """
 
     return prompt.strip()
@@ -749,13 +1040,15 @@ OUTPUT REQUIREMENTS:
 # JSON EXTRACTION
 # ============================================================
 
-def extract_json(text):
+def extract_json(
+    text
+):
+
     if not text:
         return None
 
     text = text.strip()
 
-    # Remove markdown fences if model accidentally adds them
     text = re.sub(
         r"^```(?:json)?\s*",
         "",
@@ -771,25 +1064,43 @@ def extract_json(text):
 
     text = text.strip()
 
-    # Direct parse
     try:
-        return json.loads(text)
+
+        return json.loads(
+            text
+        )
+
     except Exception:
         pass
 
-    # Find first JSON object
-    start = text.find("{")
-    end = text.rfind("}")
+    start = text.find(
+        "{"
+    )
 
-    if start == -1 or end == -1:
+    end = text.rfind(
+        "}"
+    )
+
+    if (
+        start == -1
+        or end == -1
+        or end <= start
+    ):
+
         return None
 
-    candidate = text[start:end + 1]
+    candidate = text[
+        start:end + 1
+    ]
 
     try:
-        return json.loads(candidate)
+
+        return json.loads(
+            candidate
+        )
 
     except Exception as e:
+
         print(
             f"JSON extraction failed: {e}"
         )
@@ -801,8 +1112,15 @@ def extract_json(text):
 # VALIDATE AI FIELDS
 # ============================================================
 
-def validate_ai_fields(data):
-    if not isinstance(data, dict):
+def validate_ai_fields(
+    data
+):
+
+    if not isinstance(
+        data,
+        dict
+    ):
+
         return False
 
     required = [
@@ -814,20 +1132,39 @@ def validate_ai_fields(data):
 
     for key in required:
 
-        value = data.get(key)
+        value = data.get(
+            key
+        )
 
-        if not isinstance(value, str):
+        if not isinstance(
+            value,
+            str
+        ):
+
+            print(
+                f"Missing or invalid field: {key}"
+            )
+
             return False
 
-        value = clean_text(value)
+        value = clean_text(
+            value
+        )
 
         if not value:
+
+            print(
+                f"Empty AI field: {key}"
+            )
+
             return False
 
         if len(value) > 5000:
+
             print(
                 f"AI field too long: {key}"
             )
+
             return False
 
     return True
@@ -836,15 +1173,27 @@ def validate_ai_fields(data):
 # ============================================================
 # PROPER NOUN VALIDATION
 #
-# Important:
-# Source English name can legitimately become
-# Chinese translated name.
+# IMPORTANT:
+#
+# Dictionary is NOT a requirement that every term must appear.
+#
+# We only reject the output when:
+#
+# English source term remains in Chinese output
+# even though JSON says it should be translated.
 #
 # Example:
+#
 # Malaysia -> 马来西亚
 #
-# We therefore validate against the TARGET value,
-# not the original source value.
+# Correct:
+# 马来西亚股市...
+#
+# Wrong:
+# Malaysia股市...
+#
+# If the article simply does not mention Malaysia
+# in the final shortened text, that is acceptable.
 # ============================================================
 
 def validate_proper_nouns(
@@ -852,55 +1201,114 @@ def validate_proper_nouns(
     ai_data,
     relevant_terms
 ):
+
     chinese_text = (
-        ai_data.get("chinese_title", "") +
-        " " +
-        ai_data.get("chinese_body", "")
+        ai_data.get(
+            "chinese_title",
+            ""
+        )
+        +
+        " "
+        +
+        ai_data.get(
+            "chinese_body",
+            ""
+        )
     )
 
     malay_text = (
-        ai_data.get("malay_title", "") +
-        " " +
-        ai_data.get("malay_body", "")
+        ai_data.get(
+            "malay_title",
+            ""
+        )
+        +
+        " "
+        +
+        ai_data.get(
+            "malay_body",
+            ""
+        )
     )
 
-    chinese_text_lower = chinese_text.lower()
-    malay_text_lower = malay_text.lower()
+    chinese_text_lower = (
+        chinese_text.lower()
+    )
+
+    malay_text_lower = (
+        malay_text.lower()
+    )
+
+    article_text_lower = (
+        article_text.lower()
+    )
 
     for item in relevant_terms:
 
-        source = item["source"]
-        target = item["target"]
+        source = clean_text(
+            item.get(
+                "source",
+                ""
+            )
+        )
 
-        if source.lower() not in article_text.lower():
+        target = clean_text(
+            item.get(
+                "target",
+                ""
+            )
+        )
+
+        if not source:
+            continue
+
+        if source.lower() not in article_text_lower:
             continue
 
         if not target:
             continue
 
-        # Preserve original English/brand terms
-        # if target equals source.
+        # ----------------------------------------------------
+        # KEEP ORIGINAL
+        # ----------------------------------------------------
+
         if target.lower() == source.lower():
             continue
 
-        # Chinese target should appear in Chinese output
-        # when it is a Chinese translation.
-        if re.search(r"[\u4e00-\u9fff]", target):
+        # ----------------------------------------------------
+        # Chinese translation
+        #
+        # Only reject if original English term remains.
+        # Do not require target to appear.
+        # ----------------------------------------------------
 
-            if target not in chinese_text:
+        if re.search(
+            r"[\u4e00-\u9fff]",
+            target
+        ):
+
+            if source.lower() in chinese_text_lower:
+
                 print(
-                    f"Chinese proper noun mismatch: "
+                    f"Chinese proper noun not translated: "
                     f"{source} -> {target}"
                 )
 
                 return False
 
-        # If target is Latin text, check Malay output.
-        else:
+            continue
 
-            if target.lower() not in malay_text_lower:
+        # ----------------------------------------------------
+        # Latin target
+        #
+        # Only reject source if target differs.
+        # ----------------------------------------------------
+
+        if source.lower() in malay_text_lower:
+
+            if target.lower() != source.lower():
+
                 print(
-                    f"Malay proper noun mismatch: "
+                    f"Malay proper noun not translated: "
                     f"{source} -> {target}"
                 )
 
@@ -910,17 +1318,27 @@ def validate_proper_nouns(
 
 
 # ============================================================
-# RATE LIMIT HELPERS
+# RATE LIMIT
 # ============================================================
 
-def extract_retry_seconds(error_text):
+def extract_retry_seconds(
+    error_text
+):
+
     if not error_text:
         return 30
 
     patterns = [
-        r"try again in\s*([0-9]+(?:\.[0-9]+)?)s",
-        r"retry after\s*([0-9]+(?:\.[0-9]+)?)s",
-        r"in\s*([0-9]+(?:\.[0-9]+)?)\s*seconds"
+
+        r"try again in\s*"
+        r"([0-9]+(?:\.[0-9]+)?)s",
+
+        r"retry after\s*"
+        r"([0-9]+(?:\.[0-9]+)?)s",
+
+        r"in\s*"
+        r"([0-9]+(?:\.[0-9]+)?)"
+        r"\s*seconds"
     ]
 
     for pattern in patterns:
@@ -934,6 +1352,7 @@ def extract_retry_seconds(error_text):
         if match:
 
             try:
+
                 seconds = float(
                     match.group(1)
                 )
@@ -952,7 +1371,10 @@ def extract_retry_seconds(error_text):
     return 30
 
 
-def is_rate_limit_error(error_text):
+def is_rate_limit_error(
+    error_text
+):
+
     if not error_text:
         return False
 
@@ -966,7 +1388,10 @@ def is_rate_limit_error(error_text):
     )
 
 
-def is_prompt_too_large(error_text):
+def is_prompt_too_large(
+    error_text
+):
+
     if not error_text:
         return False
 
@@ -988,16 +1413,40 @@ def generate_ai_content(
     article,
     terms_data
 ):
+
     if groq_client is None:
-        print("ERROR Groq client not initialized.")
+
+        print(
+            "ERROR Groq client not initialized."
+        )
+
         return None
 
     article_text = (
-        clean_text(article.get("title", "")) +
-        " " +
-        clean_text(article.get("description", "")) +
-        " " +
-        clean_text(article.get("content", ""))
+        clean_text(
+            article.get(
+                "title",
+                ""
+            )
+        )
+        +
+        " "
+        +
+        clean_text(
+            article.get(
+                "description",
+                ""
+            )
+        )
+        +
+        " "
+        +
+        clean_text(
+            article.get(
+                "content",
+                ""
+            )
+        )
     )
 
     all_terms = flatten_terms(
@@ -1045,28 +1494,36 @@ def generate_ai_content(
 
         print(
             f"Sending Groq request "
-            f"attempt {attempt}/{MAX_AI_ATTEMPTS}"
+            f"attempt {attempt}/"
+            f"{MAX_AI_ATTEMPTS}"
         )
 
         try:
 
-            response = groq_client.chat.completions.create(
+            response = (
+                groq_client
+                .chat
+                .completions
+                .create(
 
-                model=GROQ_MODEL,
+                    model=GROQ_MODEL,
 
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
 
-                temperature=0.1,
+                    temperature=0.1,
 
-                max_tokens=AI_MAX_TOKENS
+                    max_tokens=AI_MAX_TOKENS
+                )
             )
 
-            choice = response.choices[0]
+            choice = (
+                response.choices[0]
+            )
 
             finish_reason = getattr(
                 choice,
@@ -1074,11 +1531,14 @@ def generate_ai_content(
                 None
             )
 
-            raw_content = (
-                choice.message.content
-                if choice.message
-                else ""
-            )
+            raw_content = ""
+
+            if choice.message:
+
+                raw_content = (
+                    choice.message.content
+                    or ""
+                )
 
             if finish_reason in (
                 "length",
@@ -1090,16 +1550,15 @@ def generate_ai_content(
                     "reached max_tokens."
                 )
 
-                # Do not immediately send the same
-                # oversized request again.
                 if attempt < MAX_AI_ATTEMPTS:
 
                     print(
-                        "Retrying once with "
-                        "shorter output instructions..."
+                        "Retrying Groq..."
                     )
 
-                    time.sleep(3)
+                    time.sleep(
+                        3
+                    )
 
                     continue
 
@@ -1117,13 +1576,17 @@ def generate_ai_content(
 
                 if attempt < MAX_AI_ATTEMPTS:
 
-                    time.sleep(3)
+                    time.sleep(
+                        3
+                    )
 
                     continue
 
                 return None
 
-            if not validate_ai_fields(data):
+            if not validate_ai_fields(
+                data
+            ):
 
                 print(
                     "ERROR AI JSON fields invalid."
@@ -1131,7 +1594,9 @@ def generate_ai_content(
 
                 if attempt < MAX_AI_ATTEMPTS:
 
-                    time.sleep(3)
+                    time.sleep(
+                        3
+                    )
 
                     continue
 
@@ -1150,7 +1615,14 @@ def generate_ai_content(
 
                 if attempt < MAX_AI_ATTEMPTS:
 
-                    time.sleep(3)
+                    print(
+                        "Retrying Groq because "
+                        "proper noun validation failed..."
+                    )
+
+                    time.sleep(
+                        3
+                    )
 
                     continue
 
@@ -1172,7 +1644,7 @@ def generate_ai_content(
             )
 
             # ------------------------------------------------
-            # 429
+            # RATE LIMIT
             # ------------------------------------------------
 
             if is_rate_limit_error(
@@ -1206,7 +1678,7 @@ def generate_ai_content(
                 continue
 
             # ------------------------------------------------
-            # 413
+            # PROMPT TOO LARGE
             # ------------------------------------------------
 
             if is_prompt_too_large(
@@ -1218,18 +1690,20 @@ def generate_ai_content(
                 )
 
                 print(
-                    "Do NOT retry the same prompt."
+                    "Do not retry the same prompt."
                 )
 
                 return None
 
             # ------------------------------------------------
-            # Other errors
+            # OTHER ERROR
             # ------------------------------------------------
 
             if attempt < MAX_AI_ATTEMPTS:
 
-                time.sleep(5)
+                time.sleep(
+                    5
+                )
 
                 continue
 
@@ -1239,44 +1713,66 @@ def generate_ai_content(
 
 
 # ============================================================
-# TELEGRAM
+# TELEGRAM API URL
 # ============================================================
 
-def telegram_api_url(method):
+def telegram_api_url(
+    method
+):
+
     return (
-        f"https://api.telegram.org/"
+        "https://api.telegram.org/"
         f"bot{TELEGRAM_BOT_TOKEN}/"
         f"{method}"
     )
 
+
+# ============================================================
+# TELEGRAM CAPTION
+# ============================================================
 
 def build_telegram_caption(
     ai_data,
     source_name,
     source_url
 ):
+
     chinese_title = clean_text(
-        ai_data["chinese_title"]
+        ai_data[
+            "chinese_title"
+        ]
     )
 
     chinese_body = clean_text(
-        ai_data["chinese_body"]
+        ai_data[
+            "chinese_body"
+        ]
     )
 
     return (
-        f"<b>{html.escape(chinese_title)}</b>\n\n"
-        f"{html.escape(chinese_body)}\n\n"
+        f"<b>"
+        f"{html.escape(chinese_title)}"
+        f"</b>\n\n"
+        f"{html.escape(chinese_body)}"
+        f"\n\n"
         f"<i>Source: "
-        f"{html.escape(source_name)}</i>\n"
-        f'<a href="{html.escape(source_url, quote=True)}">'
-        f"Read more</a>"
+        f"{html.escape(source_name)}"
+        f"</i>\n"
+        f'<a href="'
+        f'{html.escape(source_url, quote=True)}'
+        f'">Read more</a>'
     )
 
+
+# ============================================================
+# SEND TELEGRAM PHOTO
+# ============================================================
 
 def send_telegram_photo(
     image_url,
     caption
 ):
+
     url = telegram_api_url(
         "sendPhoto"
     )
@@ -1312,7 +1808,9 @@ def send_telegram_photo(
 
         data = response.json()
 
-        if not data.get("ok"):
+        if not data.get(
+            "ok"
+        ):
 
             print(
                 f"Telegram API error: "
@@ -1333,9 +1831,14 @@ def send_telegram_photo(
         return False
 
 
+# ============================================================
+# SEND TELEGRAM TEXT
+# ============================================================
+
 def send_telegram_text(
     text
 ):
+
     url = telegram_api_url(
         "sendMessage"
     )
@@ -1372,7 +1875,9 @@ def send_telegram_text(
         data = response.json()
 
         return bool(
-            data.get("ok")
+            data.get(
+                "ok"
+            )
         )
 
     except Exception as e:
@@ -1391,11 +1896,21 @@ def send_telegram_text(
 
 def main():
 
-    print("=" * 60)
-    print("MYBUZZ NEWS BOT")
-    print("=" * 60)
+    print(
+        "=" * 60
+    )
 
-    run_count = increase_run_counter()
+    print(
+        "MYBUZZ NEWS BOT"
+    )
+
+    print(
+        "=" * 60
+    )
+
+    run_count = (
+        increase_run_counter()
+    )
 
     print(
         f"Run #{run_count}"
@@ -1422,9 +1937,11 @@ def main():
     terms_data = load_terms()
 
     if not terms_data:
+
         print(
             "ERROR malaysia_terms.json is empty."
         )
+
         return
 
     # --------------------------------------------------------
@@ -1434,13 +1951,15 @@ def main():
     articles = fetch_gnews()
 
     if not articles:
+
         print(
             "No articles from GNews."
         )
+
         return
 
     # --------------------------------------------------------
-    # SELECT
+    # SELECT NEWS
     # --------------------------------------------------------
 
     article = select_news(
@@ -1469,7 +1988,7 @@ def main():
         return
 
     # --------------------------------------------------------
-    # TELEGRAM
+    # TELEGRAM DATA
     # --------------------------------------------------------
 
     image_url = article.get(
@@ -1491,11 +2010,17 @@ def main():
         )
     )
 
-    caption = build_telegram_caption(
-        ai_data,
-        source_name,
-        source_url
+    caption = (
+        build_telegram_caption(
+            ai_data,
+            source_name,
+            source_url
+        )
     )
+
+    # --------------------------------------------------------
+    # SEND PHOTO
+    # --------------------------------------------------------
 
     sent = False
 
@@ -1506,6 +2031,10 @@ def main():
             caption
         )
 
+    # --------------------------------------------------------
+    # PHOTO FAILED -> SEND TEXT
+    # --------------------------------------------------------
+
     if not sent:
 
         print(
@@ -1515,15 +2044,20 @@ def main():
 
         text = (
             f"<b>"
-            f"{html.escape(ai_data['chinese_title'])}"
+            f"{html.escape("
+                ai_data["chinese_title"]
+            )}"
             f"</b>\n\n"
-            f"{html.escape(ai_data['chinese_body'])}"
+            f"{html.escape("
+                ai_data["chinese_body"]
+            )}"
             f"\n\n"
             f"<i>Source: "
             f"{html.escape(source_name)}"
             f"</i>\n"
-            f'<a href="{html.escape(source_url, quote=True)}">'
-            f"Read more</a>"
+            f'<a href="'
+            f'{html.escape(source_url, quote=True)}'
+            f'">Read more</a>'
         )
 
         sent = send_telegram_text(
@@ -1531,7 +2065,7 @@ def main():
         )
 
     # --------------------------------------------------------
-    # SAVE POSTED ONLY AFTER SUCCESS
+    # SAVE POSTED ONLY AFTER TELEGRAM SUCCESS
     # --------------------------------------------------------
 
     if sent:
@@ -1560,9 +2094,17 @@ def main():
             "ERROR Telegram send failed."
         )
 
-    print("=" * 60)
-    print("BOT FINISHED")
-    print("=" * 60)
+    print(
+        "=" * 60
+    )
+
+    print(
+        "BOT FINISHED"
+    )
+
+    print(
+        "=" * 60
+    )
 
 
 # ============================================================

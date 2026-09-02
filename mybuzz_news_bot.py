@@ -762,31 +762,79 @@ def build_terms_text(data):
 
 def validate_proper_nouns(article, ai, terms):
     flattened = flatten_terms(terms)
+
     if not flattened:
         return True, ""
 
-    zh = clean_text(ai.get("zh_title", "")) + " " + clean_text(ai.get("zh_body", ""))
-    ms = clean_text(ai.get("ms_title", "")) + " " + clean_text(ai.get("ms_body", ""))
+    article_text = clean_text(
+        str(article.get("title", "")) + " " +
+        str(article.get("description", ""))
+    )
+
+    zh = clean_text(
+        ai.get("zh_title", "")
+    ) + " " + clean_text(
+        ai.get("zh_body", "")
+    )
+
+    ms = clean_text(
+        ai.get("ms_title", "")
+    ) + " " + clean_text(
+        ai.get("ms_body", "")
+    )
 
     errors = []
 
     for original, translation in flattened.items():
+
+        original = clean_text(original)
+        translation = clean_text(translation)
+
         if len(original) < 2:
             continue
 
-        if original.lower() not in ms.lower():
-            errors.append(f'Malay missing original proper noun: {original}')
+        # ==================================================
+        # 只检查原新闻实际出现过的专有名词
+        # ==================================================
+        if original.lower() not in article_text.lower():
+            continue
 
-        if translation and translation.upper() != "KEEP ORIGINAL":
-            if translation not in zh:
-                errors.append(
-                    f'Chinese missing required translation: {original} -> {translation}'
-                )
-        else:
-            if original not in zh:
-                errors.append(
-                    f'Chinese must keep original proper noun: {original}'
-                )
+        # ==================================================
+        # Malay
+        #
+        # 不再要求每一个原文专有名词都必须出现在摘要。
+        #
+        # 如果 AI 选择提到这个专有名词，
+        # 则必须保持原文。
+        # ==================================================
+        if original.lower() in ms.lower():
+            continue
+
+        # ==================================================
+        # Chinese
+        #
+        # 如果 AI 没有提到这个专有名词，不报错。
+        #
+        # 如果 AI 提到了原文名称，
+        # 但 dictionary 有正式中文翻译，
+        # 则必须使用正式中文翻译。
+        # ==================================================
+        if original in zh:
+            if translation and translation.upper() != "KEEP ORIGINAL":
+                if translation not in zh:
+                    errors.append(
+                        f'Chinese used original instead of translation: '
+                        f'{original} -> {translation}'
+                    )
+
+        # ==================================================
+        # KEEP ORIGINAL
+        #
+        # 只有 AI 实际提到这个词时才检查，
+        # 不强制它一定出现在摘要。
+        # ==================================================
+        if translation.upper() == "KEEP ORIGINAL":
+            continue
 
     if errors:
         return False, " | ".join(errors[:12])

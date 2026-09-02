@@ -5,7 +5,6 @@ import hashlib
 import re
 import html
 import time
-from datetime import datetime, timezone
 
 import requests
 from openai import OpenAI
@@ -116,8 +115,11 @@ logger = logging.getLogger(BOT_NAME)
 
 
 # ============================================================
-# VALIDATION
+# API CONFIGURATION CHECK
 # ============================================================
+
+logger.info("Checking API configuration...")
+
 
 if not GNEWS_API_KEY:
     raise RuntimeError(
@@ -140,17 +142,18 @@ if not TELEGRAM_CHAT_ID:
     )
 
 
+logger.info("API configuration OK.")
+
+
 # ============================================================
 # GROQ CLIENT
 # ============================================================
 #
 # max_retries=0
 #
-# 重要：
-# OpenAI SDK 默认会自动 retry 429。
-# 我们关闭 SDK 自动 retry，
-# 由 MYBUZZ 自己控制 retry，
-# 避免一次失败产生多次隐藏请求。
+# OpenAI SDK 默认可能自动 retry 429。
+# 这里关闭 SDK 自动 retry，
+# 由 MYBUZZ 自己控制 retry。
 #
 # ============================================================
 
@@ -525,7 +528,6 @@ def fetch_news():
             )
         )
 
-        # 防止过长 description 进入 AI prompt
         description = description[:1500]
 
         url = normalize_url(
@@ -947,26 +949,26 @@ def validate_proper_nouns(
         if len(original) < 2:
             continue
 
-        # ==================================================
+        # ----------------------------------------------------
         # 只检查原新闻实际出现过的专有名词
-        # ==================================================
+        # ----------------------------------------------------
 
         if original.lower() not in article_lower:
             continue
 
-        # ==================================================
+        # ----------------------------------------------------
         # MALAY
         #
-        # 不再强制每个专有名词都必须出现在摘要。
+        # 如果 AI 使用原文专有名词，
+        # 保持原文即可。
         #
-        # 如果 AI 使用了这个专有名词，
-        # 则保持原文即可。
-        # ==================================================
+        # 不强制每一个专有名词必须出现在摘要。
+        # ----------------------------------------------------
 
         if original.lower() in ms_lower:
             continue
 
-        # ==================================================
+        # ----------------------------------------------------
         # CHINESE
         #
         # 如果 AI 没有提到这个专有名词，
@@ -975,7 +977,7 @@ def validate_proper_nouns(
         # 如果 AI 使用原文名称，
         # 但 dictionary 有正式中文翻译，
         # 则必须使用正式中文翻译。
-        # ==================================================
+        # ----------------------------------------------------
 
         if original in zh:
 
@@ -994,12 +996,9 @@ def validate_proper_nouns(
                         f"{original} -> {translation}"
                     )
 
-        # ==================================================
+        # ----------------------------------------------------
         # KEEP ORIGINAL
-        #
-        # 不强制 AI 必须提到。
-        # 如果提到了，保持原文即可。
-        # ==================================================
+        # ----------------------------------------------------
 
         if (
             translation.upper()
@@ -1031,7 +1030,10 @@ def extract_json(text):
 
     text = text.strip()
 
+    # --------------------------------------------------------
     # Remove Markdown code fence
+    # --------------------------------------------------------
+
     if text.startswith("```"):
 
         text = re.sub(
@@ -1091,7 +1093,9 @@ def validate_ai_fields(data):
         dict
     ):
 
-        return False, "AI result is not an object."
+        return False, (
+            "AI result is not an object."
+        )
 
     required = [
         "zh_title",
@@ -1140,9 +1144,7 @@ def generate_ai_content(article):
         )
     )
 
-    description = description[
-        :1500
-    ]
+    description = description[:1500]
 
     source = clean_text(
         article.get(
@@ -1156,6 +1158,21 @@ def generate_ai_content(article):
     terms_text = build_terms_text(
         terms_data
     )
+
+    # ========================================================
+    # IMPORTANT
+    #
+    # This is an f-string.
+    #
+    # Therefore literal JSON braces MUST be written as:
+    #
+    # {
+    # becomes {{
+    #
+    # }
+    # becomes }}
+    #
+    # ========================================================
 
     prompt = f"""
 You are the MYBUZZ Malaysia news editor and a professional Malaysian Chinese/Malay news translator.
@@ -1321,12 +1338,25 @@ Return exactly:
 
     last_error = ""
 
+    # ========================================================
+    # AI RETRY LOOP
+    # ========================================================
+
     for attempt in range(
         1,
         MAX_AI_ATTEMPTS + 1
     ):
 
+        output = ""
+
         try:
+
+            # ------------------------------------------------
+            # IMPORTANT:
+            #
+            # Retry MUST use current_prompt,
+            # not the original prompt.
+            # ------------------------------------------------
 
             current_prompt = prompt
 
@@ -1353,7 +1383,7 @@ Do not repeat the previous incomplete response.
 
 Make sure every JSON string is complete.
 
-Make sure the final character is }.
+Make sure the final character is }}.
 
 Keep:
 
@@ -1418,9 +1448,9 @@ Return ONLY valid JSON.
                 output[:1500]
             )
 
-            # ==================================================
+            # =================================================
             # EMPTY RESPONSE
-            # ==================================================
+            # =================================================
 
             if not output:
 
@@ -1428,9 +1458,9 @@ Return ONLY valid JSON.
                     "Groq returned an empty response"
                 )
 
-            # ==================================================
+            # =================================================
             # DETECT TOKEN TRUNCATION
-            # ==================================================
+            # =================================================
 
             if (
                 finish_reason
@@ -1446,9 +1476,9 @@ Return ONLY valid JSON.
                     "AI output was truncated by token limit"
                 )
 
-            # ==================================================
+            # =================================================
             # EXTRACT JSON
-            # ==================================================
+            # =================================================
 
             data = extract_json(
                 output
@@ -1460,9 +1490,9 @@ Return ONLY valid JSON.
                     "AI returned incomplete or invalid JSON"
                 )
 
-            # ==================================================
-            # VALIDATE FIELDS
-            # ==================================================
+            # =================================================
+            # VALIDATE AI FIELDS
+            # =================================================
 
             valid_fields, field_error = (
                 validate_ai_fields(
@@ -1476,9 +1506,9 @@ Return ONLY valid JSON.
                     field_error
                 )
 
-            # ==================================================
+            # =================================================
             # PROPER NOUN VALIDATION
-            # ==================================================
+            # =================================================
 
             valid, error_message = (
                 validate_proper_nouns(
@@ -1497,11 +1527,26 @@ Return ONLY valid JSON.
                     error_message
                 )
 
+                if attempt < MAX_AI_ATTEMPTS:
+
+                    wait_time = (
+                        5 * attempt
+                    )
+
+                    logger.info(
+                        "Retrying AI in %s seconds...",
+                        wait_time
+                    )
+
+                    time.sleep(
+                        wait_time
+                    )
+
                 continue
 
-            # ==================================================
+            # =================================================
             # SUCCESS
-            # ==================================================
+            # =================================================
 
             logger.info(
                 "AI content validation passed."
@@ -1532,9 +1577,9 @@ Return ONLY valid JSON.
 
             error_text = str(e).lower()
 
-            # ==================================================
+            # =================================================
             # GROQ RATE LIMIT
-            # ==================================================
+            # =================================================
 
             if (
                 "429" in error_text
@@ -1568,9 +1613,9 @@ Return ONLY valid JSON.
                 e
             )
 
-            # ==================================================
+            # =================================================
             # NORMAL ERROR RETRY
-            # ==================================================
+            # =================================================
 
             if attempt < MAX_AI_ATTEMPTS:
 
@@ -1597,7 +1642,7 @@ Return ONLY valid JSON.
 
 
 # ============================================================
-# TELEGRAM CAPTION
+# TELEGRAM HTML ESCAPE
 # ============================================================
 
 def escape_html(text):
@@ -1607,6 +1652,10 @@ def escape_html(text):
         quote=False
     )
 
+
+# ============================================================
+# TELEGRAM CAPTION
+# ============================================================
 
 def build_caption(
     article,

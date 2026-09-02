@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import time
 import html
 import hashlib
 import requests
@@ -28,15 +27,10 @@ MAX_POSTED = 1000
 # GROQ CONFIG
 # ============================================================
 
-# 只请求一次。
-# 避免第一次请求消耗 TPM 后再次触发 429。
 MAX_AI_ATTEMPTS = 1
 
-# GPT-OSS reasoning 会消耗 completion tokens。
-# 1200 给最终 JSON + reasoning 留出足够空间。
 AI_MAX_COMPLETION_TOKENS = 1200
 
-# 使用低 reasoning，减少不必要 token 消耗。
 AI_REASONING_EFFORT = "low"
 
 
@@ -794,7 +788,6 @@ def find_relevant_terms(
 
     seen = set()
 
-    # 长词优先，避免短词先匹配。
     sorted_terms = sorted(
         terms,
         key=lambda item: len(
@@ -881,9 +874,6 @@ def build_terms_text(
 
 # ============================================================
 # VERBOSE RULE KEYS
-#
-# 这些通常是 examples / sample / reference。
-# 不需要发送给模型。
 # ============================================================
 
 VERBOSE_RULE_KEYS = {
@@ -1030,15 +1020,7 @@ def compact_rule_value(
 
 
 # ============================================================
-# COMPACT RULE TEXT
-#
-# 不再单纯 text[:1200]。
-#
-# 会：
-# 1. 删除 examples/reference
-# 2. 删除空内容
-# 3. JSON 压缩
-# 4. 最后才做安全长度限制
+# BUILD RULE TEXT
 # ============================================================
 
 def build_rule_text(
@@ -1477,10 +1459,6 @@ def validate_proper_nouns(
 
             continue
 
-        # ====================================================
-        # source == target
-        # ====================================================
-
         if (
             target.lower()
             == source.lower()
@@ -1489,11 +1467,7 @@ def validate_proper_nouns(
             continue
 
         # ====================================================
-        # Chinese target
-        #
-        # 不要求 target 必须出现。
-        #
-        # 只禁止 AI 把英文 source 原样留在中文。
+        # Chinese
         # ====================================================
 
         if re.search(
@@ -1516,7 +1490,7 @@ def validate_proper_nouns(
             continue
 
         # ====================================================
-        # Malay target
+        # Malay
         # ====================================================
 
         if (
@@ -1540,7 +1514,7 @@ def validate_proper_nouns(
 
 
 # ============================================================
-# RATE LIMIT HELPERS
+# RATE LIMIT
 # ============================================================
 
 def is_rate_limit_error(
@@ -1630,7 +1604,7 @@ def generate_ai_content(
     )
 
     # ========================================================
-    # 找相关词
+    # FIND RELEVANT TERMS
     # ========================================================
 
     all_terms = flatten_terms(
@@ -1678,7 +1652,7 @@ def generate_ai_content(
     )
 
     # ========================================================
-    # GROQ REQUEST
+    # GROQ
     # ========================================================
 
     for attempt in range(
@@ -1719,8 +1693,6 @@ def generate_ai_content(
                         AI_REASONING_EFFORT
                     ),
 
-                    include_reasoning=False,
-
                     response_format={
                         "type": "json_object"
                     }
@@ -1752,7 +1724,7 @@ def generate_ai_content(
                 )
 
             # =================================================
-            # EMPTY RESPONSE
+            # EMPTY
             # =================================================
 
             if not raw_content:
@@ -1764,9 +1736,7 @@ def generate_ai_content(
                 return None
 
             # =================================================
-            # MAX TOKEN
-            #
-            # 不 retry。
+            # MAX TOKENS
             # =================================================
 
             if finish_reason in (
@@ -2233,7 +2203,7 @@ def main():
         )
 
     # ========================================================
-    # PHOTO FAILED -> SEND TEXT
+    # PHOTO FAILED -> TEXT
     # ========================================================
 
     if not sent:

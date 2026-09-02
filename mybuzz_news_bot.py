@@ -24,24 +24,49 @@ MAX_GNEWS_ARTICLES = 10
 MAX_POSTED = 1000
 
 MAX_AI_ATTEMPTS = 2
-
 AI_MAX_TOKENS = 1200
 
 DATA_DIR = "."
 
-TERMS_FILE = os.path.join(DATA_DIR, "malaysia_terms.json")
-POSTED_FILE = os.path.join(DATA_DIR, "posted.json")
-STATE_FILE = os.path.join(DATA_DIR, "bot_state.json")
+TERMS_FILE = os.path.join(
+    DATA_DIR,
+    "malaysia_terms.json"
+)
+
+POSTED_FILE = os.path.join(
+    DATA_DIR,
+    "posted.json"
+)
+
+STATE_FILE = os.path.join(
+    DATA_DIR,
+    "bot_state.json"
+)
 
 
 # ============================================================
 # ENV
 # ============================================================
 
-GNEWS_API_KEY = os.getenv("GNEWS_API_KEY", "").strip()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+GNEWS_API_KEY = os.getenv(
+    "GNEWS_API_KEY",
+    ""
+).strip()
+
+GROQ_API_KEY = os.getenv(
+    "GROQ_API_KEY",
+    ""
+).strip()
+
+TELEGRAM_BOT_TOKEN = os.getenv(
+    "TELEGRAM_BOT_TOKEN",
+    ""
+).strip()
+
+TELEGRAM_CHAT_ID = os.getenv(
+    "TELEGRAM_CHAT_ID",
+    ""
+).strip()
 
 
 # ============================================================
@@ -51,6 +76,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 groq_client = None
 
 if GROQ_API_KEY:
+
     groq_client = OpenAI(
         api_key=GROQ_API_KEY,
         base_url=GROQ_BASE_URL,
@@ -63,20 +89,33 @@ if GROQ_API_KEY:
 # ============================================================
 
 def clean_text(text):
+
     if not text:
         return ""
 
     text = str(text)
 
-    text = text.replace("\r", " ")
-    text = text.replace("\n", " ")
+    text = text.replace(
+        "\r",
+        " "
+    )
 
-    text = re.sub(r"\s+", " ", text)
+    text = text.replace(
+        "\n",
+        " "
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
 
     return text.strip()
 
 
 def normalize_url(url):
+
     if not url:
         return ""
 
@@ -86,27 +125,42 @@ def normalize_url(url):
 
 
 def article_id(article):
+
     url = normalize_url(
-        article.get("url", "")
+        article.get(
+            "url",
+            ""
+        )
     )
 
     if url:
+
         return hashlib.sha256(
-            url.encode("utf-8")
+            url.encode(
+                "utf-8"
+            )
         ).hexdigest()
 
     raw = (
         clean_text(
-            article.get("title", "")
+            article.get(
+                "title",
+                ""
+            )
         )
         +
         clean_text(
-            article.get("description", "")
+            article.get(
+                "description",
+                ""
+            )
         )
     )
 
     return hashlib.sha256(
-        raw.encode("utf-8")
+        raw.encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
@@ -116,7 +170,10 @@ def article_id(article):
 
 def load_posted():
 
-    if not os.path.exists(POSTED_FILE):
+    if not os.path.exists(
+        POSTED_FILE
+    ):
+
         return []
 
     try:
@@ -129,10 +186,18 @@ def load_posted():
 
             data = json.load(f)
 
-        if isinstance(data, list):
+        if isinstance(
+            data,
+            list
+        ):
+
             return data
 
-        if isinstance(data, dict):
+        if isinstance(
+            data,
+            dict
+        ):
+
             return data.get(
                 "posted",
                 []
@@ -149,7 +214,9 @@ def load_posted():
 
 def save_posted(posted):
 
-    posted = posted[-MAX_POSTED:]
+    posted = posted[
+        -MAX_POSTED:
+    ]
 
     try:
 
@@ -179,7 +246,9 @@ def save_posted(posted):
 
 def load_state():
 
-    if not os.path.exists(STATE_FILE):
+    if not os.path.exists(
+        STATE_FILE
+    ):
 
         return {
             "run_count": 0
@@ -195,7 +264,11 @@ def load_state():
 
             data = json.load(f)
 
-        if isinstance(data, dict):
+        if isinstance(
+            data,
+            dict
+        ):
+
             return data
 
     except Exception as e:
@@ -244,9 +317,13 @@ def increase_run_counter():
         )
     ) + 1
 
-    save_state(state)
+    save_state(
+        state
+    )
 
-    return state["run_count"]
+    return state[
+        "run_count"
+    ]
 
 
 # ============================================================
@@ -258,21 +335,25 @@ def check_config():
     missing = []
 
     if not GNEWS_API_KEY:
+
         missing.append(
             "GNEWS_API_KEY"
         )
 
     if not GROQ_API_KEY:
+
         missing.append(
             "GROQ_API_KEY"
         )
 
     if not TELEGRAM_BOT_TOKEN:
+
         missing.append(
             "TELEGRAM_BOT_TOKEN"
         )
 
     if not TELEGRAM_CHAT_ID:
+
         missing.append(
             "TELEGRAM_CHAT_ID"
         )
@@ -305,7 +386,9 @@ def check_config():
 
 def fetch_gnews():
 
-    url = f"{GNEWS_BASE_URL}/search"
+    url = (
+        f"{GNEWS_BASE_URL}/search"
+    )
 
     params = {
         "q": "Malaysia",
@@ -324,7 +407,8 @@ def fetch_gnews():
         )
 
         print(
-            f"GNews HTTP {response.status_code}"
+            f"GNews HTTP "
+            f"{response.status_code}"
         )
 
         response.raise_for_status()
@@ -359,6 +443,7 @@ def fetch_gnews():
 def get_article_image(url):
 
     if not url:
+
         return ""
 
     try:
@@ -376,6 +461,7 @@ def get_article_image(url):
         )
 
         if response.status_code != 200:
+
             return ""
 
         soup = BeautifulSoup(
@@ -392,11 +478,15 @@ def get_article_image(url):
 
             content = (
                 og_image
-                .get("content", "")
+                .get(
+                    "content",
+                    ""
+                )
                 .strip()
             )
 
             if content:
+
                 return content
 
         twitter_image = soup.find(
@@ -410,11 +500,15 @@ def get_article_image(url):
 
             content = (
                 twitter_image
-                .get("content", "")
+                .get(
+                    "content",
+                    ""
+                )
                 .strip()
             )
 
             if content:
+
                 return content
 
     except Exception as e:
@@ -435,7 +529,9 @@ def select_news(
     posted
 ):
 
-    posted_set = set(posted)
+    posted_set = set(
+        posted
+    )
 
     for article in articles:
 
@@ -444,6 +540,7 @@ def select_news(
         )
 
         if aid in posted_set:
+
             continue
 
         title = clean_text(
@@ -490,9 +587,11 @@ def select_news(
         )
 
         if not title:
+
             continue
 
         if not url:
+
             continue
 
         image = (
@@ -500,7 +599,8 @@ def select_news(
                 "image",
                 ""
             )
-            or get_article_image(
+            or
+            get_article_image(
                 url
             )
         )
@@ -515,8 +615,12 @@ def select_news(
             continue
 
         article["_id"] = aid
+
         article["_image"] = image
-        article["_source_name"] = source_name
+
+        article["_source_name"] = (
+            source_name
+        )
 
         print(
             f"Selected title: {title}"
@@ -532,7 +636,7 @@ def select_news(
 
 
 # ============================================================
-# LOAD MALAYSIA TERMS
+# LOAD TERMS
 # ============================================================
 
 def load_terms():
@@ -545,7 +649,9 @@ def load_terms():
             encoding="utf-8"
         ) as f:
 
-            data = json.load(f)
+            data = json.load(
+                f
+            )
 
         if not isinstance(
             data,
@@ -590,12 +696,14 @@ def flatten_terms(data):
     for category, values in data.items():
 
         if category in NON_TERM_CATEGORIES:
+
             continue
 
         if not isinstance(
             values,
             dict
         ):
+
             continue
 
         for original, translated in values.items():
@@ -617,7 +725,7 @@ def flatten_terms(data):
 # ============================================================
 # FIND RELEVANT TERMS
 #
-# Deduplicate identical source -> target mappings.
+# Remove duplicate source -> target mappings.
 # ============================================================
 
 def find_relevant_terms(
@@ -630,6 +738,7 @@ def find_relevant_terms(
     )
 
     matches = []
+
     seen = set()
 
     for item in terms:
@@ -649,6 +758,7 @@ def find_relevant_terms(
         )
 
         if not source:
+
             continue
 
         key = (
@@ -657,9 +767,13 @@ def find_relevant_terms(
         )
 
         if key in seen:
+
             continue
 
-        if source.lower() in article_text_lower:
+        if (
+            source.lower()
+            in article_text_lower
+        ):
 
             matches.append(
                 item
@@ -704,8 +818,8 @@ def build_terms_text(
 # ============================================================
 # VERBOSE RULE KEYS
 #
-# These are examples / reference material.
-# Actual rules remain inside malaysia_terms.json.
+# These are examples/reference material.
+# Actual rules remain in malaysia_terms.json.
 # ============================================================
 
 VERBOSE_RULE_KEYS = {
@@ -757,14 +871,19 @@ def compact_rule_value(
 
         for key, child in value.items():
 
-            key_text = str(key)
+            key_text = str(
+                key
+            )
 
             if key_text in VERBOSE_RULE_KEYS:
+
                 continue
 
-            compact_child = compact_rule_value(
-                child,
-                depth + 1
+            compact_child = (
+                compact_rule_value(
+                    child,
+                    depth + 1
+                )
             )
 
             if compact_child in (
@@ -776,7 +895,9 @@ def compact_rule_value(
 
                 continue
 
-            result[key] = compact_child
+            result[key] = (
+                compact_child
+            )
 
         return result
 
@@ -799,6 +920,7 @@ def compact_rule_value(
                 )
 
                 if text:
+
                     result.append(
                         text
                     )
@@ -859,8 +981,10 @@ def build_rule_text(
             f"No {category} rules."
         )
 
-    compacted = compact_rule_value(
-        value
+    compacted = (
+        compact_rule_value(
+            value
+        )
     )
 
     return json.dumps(
@@ -984,14 +1108,14 @@ Rewrite the source article into:
 2. Natural Malaysian Malay news.
 
 FACTUAL ACCURACY:
-- Preserve all facts from the source.
+- Preserve facts from the source.
 - Never invent facts.
 - Never invent names, places, organizations or numbers.
 - Preserve uncertainty such as expected, may, could, according to, etc.
 - Do not change the meaning.
 - Use dictionary mappings when applicable.
-- Chinese must sound natural in Malaysian Chinese news style.
-- Malay must sound natural in Malaysian Malay news style.
+- Chinese must sound natural in Malaysian Chinese news.
+- Malay must sound natural in Malaysian Malay news.
 - Avoid literal machine translation.
 - Avoid Indonesian Malay.
 
@@ -1045,6 +1169,7 @@ def extract_json(
 ):
 
     if not text:
+
         return None
 
     text = text.strip()
@@ -1071,6 +1196,7 @@ def extract_json(
         )
 
     except Exception:
+
         pass
 
     start = text.find(
@@ -1173,14 +1299,7 @@ def validate_ai_fields(
 # ============================================================
 # PROPER NOUN VALIDATION
 #
-# IMPORTANT:
-#
-# Dictionary is NOT a requirement that every term must appear.
-#
-# We only reject the output when:
-#
-# English source term remains in Chinese output
-# even though JSON says it should be translated.
+# Do NOT require every dictionary term to appear.
 #
 # Example:
 #
@@ -1192,8 +1311,8 @@ def validate_ai_fields(
 # Wrong:
 # Malaysia股市...
 #
-# If the article simply does not mention Malaysia
-# in the final shortened text, that is acceptable.
+# If the AI shortens the article and does not mention
+# Malaysia again, that is acceptable.
 # ============================================================
 
 def validate_proper_nouns(
@@ -1259,25 +1378,35 @@ def validate_proper_nouns(
         )
 
         if not source:
+
             continue
 
-        if source.lower() not in article_text_lower:
+        if (
+            source.lower()
+            not in article_text_lower
+        ):
+
             continue
 
         if not target:
+
             continue
 
         # ----------------------------------------------------
         # KEEP ORIGINAL
         # ----------------------------------------------------
 
-        if target.lower() == source.lower():
+        if (
+            target.lower()
+            == source.lower()
+        ):
+
             continue
 
         # ----------------------------------------------------
         # Chinese translation
         #
-        # Only reject if original English term remains.
+        # Only reject if the original source term remains.
         # Do not require target to appear.
         # ----------------------------------------------------
 
@@ -1286,7 +1415,10 @@ def validate_proper_nouns(
             target
         ):
 
-            if source.lower() in chinese_text_lower:
+            if (
+                source.lower()
+                in chinese_text_lower
+            ):
 
                 print(
                     f"Chinese proper noun not translated: "
@@ -1299,13 +1431,17 @@ def validate_proper_nouns(
 
         # ----------------------------------------------------
         # Latin target
-        #
-        # Only reject source if target differs.
         # ----------------------------------------------------
 
-        if source.lower() in malay_text_lower:
+        if (
+            source.lower()
+            in malay_text_lower
+        ):
 
-            if target.lower() != source.lower():
+            if (
+                target.lower()
+                != source.lower()
+            ):
 
                 print(
                     f"Malay proper noun not translated: "
@@ -1318,7 +1454,7 @@ def validate_proper_nouns(
 
 
 # ============================================================
-# RATE LIMIT
+# RATE LIMIT HELPERS
 # ============================================================
 
 def extract_retry_seconds(
@@ -1326,6 +1462,7 @@ def extract_retry_seconds(
 ):
 
     if not error_text:
+
         return 30
 
     patterns = [
@@ -1366,6 +1503,7 @@ def extract_retry_seconds(
                 )
 
             except Exception:
+
                 pass
 
     return 30
@@ -1376,15 +1514,19 @@ def is_rate_limit_error(
 ):
 
     if not error_text:
+
         return False
 
     text = error_text.lower()
 
     return (
         "429" in text
-        or "rate limit" in text
-        or "tpm limit" in text
-        or "too many requests" in text
+        or
+        "rate limit" in text
+        or
+        "tpm limit" in text
+        or
+        "too many requests" in text
     )
 
 
@@ -1393,15 +1535,19 @@ def is_prompt_too_large(
 ):
 
     if not error_text:
+
         return False
 
     text = error_text.lower()
 
     return (
         "413" in text
-        or "request too large" in text
-        or "prompt is too long" in text
-        or "context length" in text
+        or
+        "request too large" in text
+        or
+        "prompt is too long" in text
+        or
+        "context length" in text
     )
 
 
@@ -1453,9 +1599,11 @@ def generate_ai_content(
         terms_data
     )
 
-    relevant_terms = find_relevant_terms(
-        article_text,
-        all_terms
+    relevant_terms = (
+        find_relevant_terms(
+            article_text,
+            all_terms
+        )
     )
 
     print(
@@ -1505,7 +1653,6 @@ def generate_ai_content(
                 .chat
                 .completions
                 .create(
-
                     model=GROQ_MODEL,
 
                     messages=[
@@ -1540,6 +1687,10 @@ def generate_ai_content(
                     or ""
                 )
 
+            # ------------------------------------------------
+            # MAX TOKEN
+            # ------------------------------------------------
+
             if finish_reason in (
                 "length",
                 "max_tokens"
@@ -1564,6 +1715,10 @@ def generate_ai_content(
 
                 return None
 
+            # ------------------------------------------------
+            # JSON
+            # ------------------------------------------------
+
             data = extract_json(
                 raw_content
             )
@@ -1584,6 +1739,10 @@ def generate_ai_content(
 
                 return None
 
+            # ------------------------------------------------
+            # FIELD VALIDATION
+            # ------------------------------------------------
+
             if not validate_ai_fields(
                 data
             ):
@@ -1601,6 +1760,10 @@ def generate_ai_content(
                     continue
 
                 return None
+
+            # ------------------------------------------------
+            # PROPER NOUN VALIDATION
+            # ------------------------------------------------
 
             if not validate_proper_nouns(
                 article_text,
@@ -1713,7 +1876,7 @@ def generate_ai_content(
 
 
 # ============================================================
-# TELEGRAM API URL
+# TELEGRAM API
 # ============================================================
 
 def telegram_api_url(
@@ -1749,18 +1912,35 @@ def build_telegram_caption(
         ]
     )
 
+    safe_title = html.escape(
+        chinese_title
+    )
+
+    safe_body = html.escape(
+        chinese_body
+    )
+
+    safe_source = html.escape(
+        source_name
+    )
+
+    safe_url = html.escape(
+        source_url,
+        quote=True
+    )
+
     return (
-        f"<b>"
-        f"{html.escape(chinese_title)}"
-        f"</b>\n\n"
-        f"{html.escape(chinese_body)}"
-        f"\n\n"
-        f"<i>Source: "
-        f"{html.escape(source_name)}"
-        f"</i>\n"
-        f'<a href="'
-        f'{html.escape(source_url, quote=True)}'
-        f'">Read more</a>'
+        "<b>"
+        + safe_title
+        + "</b>\n\n"
+        + safe_body
+        + "\n\n"
+        + "<i>Source: "
+        + safe_source
+        + "</i>\n"
+        + '<a href="'
+        + safe_url
+        + '">Read more</a>'
     )
 
 
@@ -1921,6 +2101,7 @@ def main():
     # --------------------------------------------------------
 
     if not check_config():
+
         return
 
     # --------------------------------------------------------
@@ -1968,6 +2149,7 @@ def main():
     )
 
     if not article:
+
         return
 
     # --------------------------------------------------------
@@ -2042,22 +2224,39 @@ def main():
             "Trying text message..."
         )
 
+        safe_title = html.escape(
+            ai_data[
+                "chinese_title"
+            ]
+        )
+
+        safe_body = html.escape(
+            ai_data[
+                "chinese_body"
+            ]
+        )
+
+        safe_source = html.escape(
+            source_name
+        )
+
+        safe_url = html.escape(
+            source_url,
+            quote=True
+        )
+
         text = (
-            f"<b>"
-            f"{html.escape("
-                ai_data["chinese_title"]
-            )}"
-            f"</b>\n\n"
-            f"{html.escape("
-                ai_data["chinese_body"]
-            )}"
-            f"\n\n"
-            f"<i>Source: "
-            f"{html.escape(source_name)}"
-            f"</i>\n"
-            f'<a href="'
-            f'{html.escape(source_url, quote=True)}'
-            f'">Read more</a>'
+            "<b>"
+            + safe_title
+            + "</b>\n\n"
+            + safe_body
+            + "\n\n"
+            + "<i>Source: "
+            + safe_source
+            + "</i>\n"
+            + '<a href="'
+            + safe_url
+            + '">Read more</a>'
         )
 
         sent = send_telegram_text(
@@ -2065,7 +2264,7 @@ def main():
         )
 
     # --------------------------------------------------------
-    # SAVE POSTED ONLY AFTER TELEGRAM SUCCESS
+    # SAVE POSTED ONLY AFTER SUCCESS
     # --------------------------------------------------------
 
     if sent:
@@ -2112,4 +2311,5 @@ def main():
 # ============================================================
 
 if __name__ == "__main__":
+
     main()

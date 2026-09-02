@@ -23,8 +23,33 @@ REQUEST_TIMEOUT = 20
 MAX_GNEWS_ARTICLES = 10
 MAX_POSTED = 1000
 
-MAX_AI_ATTEMPTS = 2
-AI_MAX_TOKENS = 1200
+# ============================================================
+# GROQ
+# ============================================================
+
+# 只请求一次
+# 避免第一次已经消耗大量 TPM 后再次触发 429
+MAX_AI_ATTEMPTS = 1
+
+# 降低输出 token
+AI_MAX_TOKENS = 700
+
+
+# ============================================================
+# PROMPT LIMITS
+#
+# 控制发送给 Groq 的内容大小
+# ============================================================
+
+MAX_TITLE_CHARS = 500
+MAX_DESCRIPTION_CHARS = 1800
+MAX_CONTENT_CHARS = 4000
+
+MAX_TRANSLATION_RULE_CHARS = 1800
+MAX_NEWS_STRUCTURE_CHARS = 1200
+MAX_MALAY_STYLE_CHARS = 1400
+MAX_CHINESE_STYLE_CHARS = 1400
+
 
 DATA_DIR = "."
 
@@ -114,6 +139,25 @@ def clean_text(text):
     return text.strip()
 
 
+def limit_text(
+    text,
+    max_chars
+):
+
+    text = clean_text(
+        text
+    )
+
+    if len(text) <= max_chars:
+
+        return text
+
+    return (
+        text[:max_chars]
+        + "..."
+    )
+
+
 def normalize_url(url):
 
     if not url:
@@ -184,7 +228,9 @@ def load_posted():
             encoding="utf-8"
         ) as f:
 
-            data = json.load(f)
+            data = json.load(
+                f
+            )
 
         if isinstance(
             data,
@@ -262,7 +308,9 @@ def load_state():
             encoding="utf-8"
         ) as f:
 
-            data = json.load(f)
+            data = json.load(
+                f
+            )
 
         if isinstance(
             data,
@@ -724,8 +772,6 @@ def flatten_terms(data):
 
 # ============================================================
 # FIND RELEVANT TERMS
-#
-# Remove duplicate source -> target mappings.
 # ============================================================
 
 def find_relevant_terms(
@@ -797,8 +843,7 @@ def build_terms_text(
     if not relevant_terms:
 
         return (
-            "No dictionary terms detected "
-            "in this article."
+            "No dictionary terms detected."
         )
 
     lines = []
@@ -817,9 +862,6 @@ def build_terms_text(
 
 # ============================================================
 # VERBOSE RULE KEYS
-#
-# These are examples/reference material.
-# Actual rules remain in malaysia_terms.json.
 # ============================================================
 
 VERBOSE_RULE_KEYS = {
@@ -964,11 +1006,14 @@ def compact_rule_value(
 
 # ============================================================
 # BUILD RULE TEXT
+#
+# 只发送必要规则，并限制字符数。
 # ============================================================
 
 def build_rule_text(
     data,
-    category
+    category,
+    max_chars
 ):
 
     value = data.get(
@@ -987,7 +1032,7 @@ def build_rule_text(
         )
     )
 
-    return json.dumps(
+    text = json.dumps(
         compacted,
         ensure_ascii=False,
         separators=(
@@ -996,41 +1041,62 @@ def build_rule_text(
         )
     )
 
+    if len(text) <= max_chars:
+
+        return text
+
+    print(
+        f"WARNING {category} rules "
+        f"too long: {len(text)} chars. "
+        f"Truncating to {max_chars}."
+    )
+
+    return (
+        text[:max_chars]
+        + "..."
+    )
+
 
 # ============================================================
 # SOURCE ARTICLE
+#
+# 限制发送给 Groq 的原文长度。
 # ============================================================
 
 def build_source_article(
     article
 ):
 
-    title = clean_text(
+    title = limit_text(
         article.get(
             "title",
             ""
-        )
+        ),
+        MAX_TITLE_CHARS
     )
 
-    description = clean_text(
+    description = limit_text(
         article.get(
             "description",
             ""
-        )
+        ),
+        MAX_DESCRIPTION_CHARS
     )
 
-    content = clean_text(
+    content = limit_text(
         article.get(
             "content",
             ""
-        )
+        ),
+        MAX_CONTENT_CHARS
     )
 
-    source = clean_text(
+    source = limit_text(
         article.get(
             "_source_name",
             ""
-        )
+        ),
+        200
     )
 
     url = normalize_url(
@@ -1071,31 +1137,39 @@ def build_groq_prompt(
         )
     )
 
+    # ========================================================
+    # 只发送必要的 4 个规则类别
+    # ========================================================
+
     translation_rules = (
         build_rule_text(
             terms_data,
-            "TRANSLATION_RULES"
+            "TRANSLATION_RULES",
+            MAX_TRANSLATION_RULE_CHARS
         )
     )
 
     news_structure = (
         build_rule_text(
             terms_data,
-            "NEWS_STRUCTURE"
+            "NEWS_STRUCTURE",
+            MAX_NEWS_STRUCTURE_CHARS
         )
     )
 
     malay_style = (
         build_rule_text(
             terms_data,
-            "MALAY_STYLE"
+            "MALAY_STYLE",
+            MAX_MALAY_STYLE_CHARS
         )
     )
 
     chinese_style = (
         build_rule_text(
             terms_data,
-            "CHINESE_STYLE"
+            "CHINESE_STYLE",
+            MAX_CHINESE_STYLE_CHARS
         )
     )
 
@@ -1107,19 +1181,21 @@ Rewrite the source article into:
 1. Natural Malaysian Chinese news.
 2. Natural Malaysian Malay news.
 
-FACTUAL ACCURACY:
+IMPORTANT:
 - Preserve facts from the source.
 - Never invent facts.
 - Never invent names, places, organizations or numbers.
+- Do not add information not supported by the source.
 - Preserve uncertainty such as expected, may, could, according to, etc.
-- Do not change the meaning.
-- Use dictionary mappings when applicable.
-- Chinese must sound natural in Malaysian Chinese news.
-- Malay must sound natural in Malaysian Malay news.
+- Use the dictionary mappings when applicable.
+- Chinese must sound like natural Malaysian Chinese news.
+- Malay must sound like natural Malaysian Malay news.
+- Do not use Indonesian Malay.
 - Avoid literal machine translation.
-- Avoid Indonesian Malay.
+- Keep the article concise.
+- If the source does not provide enough information, do not guess.
 
-DICTIONARY:
+DICTIONARY TERMS:
 {terms_text}
 
 TRANSLATION RULES:
@@ -1137,7 +1213,8 @@ CHINESE STYLE:
 SOURCE ARTICLE:
 {source_article}
 
-RETURN ONLY THIS JSON:
+RETURN ONLY VALID JSON:
+
 {{
   "chinese_title": "Chinese news headline",
   "chinese_body": "Chinese news body",
@@ -1150,11 +1227,12 @@ OUTPUT RULES:
 - No Markdown.
 - No code fence.
 - No explanation.
-- Chinese title: concise news headline.
-- Malay title: concise news headline.
-- Chinese body: normally 2-4 sentences.
-- Malay body: normally 2-4 sentences.
-- Do not add unsupported information.
+- Chinese title: concise.
+- Malay title: concise.
+- Chinese body: 2-3 sentences.
+- Malay body: 2-3 sentences.
+- Do not repeat the same sentence.
+- Do not add unsupported facts.
 """
 
     return prompt.strip()
@@ -1299,20 +1377,22 @@ def validate_ai_fields(
 # ============================================================
 # PROPER NOUN VALIDATION
 #
-# Do NOT require every dictionary term to appear.
+# 不要求每个词一定出现在 AI 输出。
 #
-# Example:
+# 例如：
 #
 # Malaysia -> 马来西亚
 #
-# Correct:
+# 如果 AI 使用：
 # 马来西亚股市...
 #
-# Wrong:
-# Malaysia股市...
+# 正确。
 #
-# If the AI shortens the article and does not mention
-# Malaysia again, that is acceptable.
+# 如果 AI 完全没有再次提到 Malaysia，
+# 也允许。
+#
+# 只有当 AI 把 Malaysia 原文直接留在中文里，
+# 才判定失败。
 # ============================================================
 
 def validate_proper_nouns(
@@ -1392,9 +1472,10 @@ def validate_proper_nouns(
 
             continue
 
-        # ----------------------------------------------------
-        # KEEP ORIGINAL
-        # ----------------------------------------------------
+        # ====================================================
+        # 如果 source == target
+        # 不需要翻译
+        # ====================================================
 
         if (
             target.lower()
@@ -1403,12 +1484,14 @@ def validate_proper_nouns(
 
             continue
 
-        # ----------------------------------------------------
-        # Chinese translation
+        # ====================================================
+        # 中文翻译
         #
-        # Only reject if the original source term remains.
-        # Do not require target to appear.
-        # ----------------------------------------------------
+        # 只检查：
+        # AI 有没有把英文 source 原样留在中文里面
+        #
+        # 不要求 target 一定出现。
+        # ====================================================
 
         if re.search(
             r"[\u4e00-\u9fff]",
@@ -1429,9 +1512,9 @@ def validate_proper_nouns(
 
             continue
 
-        # ----------------------------------------------------
-        # Latin target
-        # ----------------------------------------------------
+        # ====================================================
+        # Malay
+        # ====================================================
 
         if (
             source.lower()
@@ -1635,6 +1718,10 @@ def generate_ai_content(
         f"{len(prompt)} characters"
     )
 
+    # ========================================================
+    # 只请求一次
+    # ========================================================
+
     for attempt in range(
         1,
         MAX_AI_ATTEMPTS + 1
@@ -1687,9 +1774,11 @@ def generate_ai_content(
                     or ""
                 )
 
-            # ------------------------------------------------
+            # =================================================
             # MAX TOKEN
-            # ------------------------------------------------
+            #
+            # 不再 retry
+            # =================================================
 
             if finish_reason in (
                 "length",
@@ -1701,23 +1790,16 @@ def generate_ai_content(
                     "reached max_tokens."
                 )
 
-                if attempt < MAX_AI_ATTEMPTS:
-
-                    print(
-                        "Retrying Groq..."
-                    )
-
-                    time.sleep(
-                        3
-                    )
-
-                    continue
+                print(
+                    "AI output was incomplete. "
+                    "No retry to avoid TPM rate limit."
+                )
 
                 return None
 
-            # ------------------------------------------------
+            # =================================================
             # JSON
-            # ------------------------------------------------
+            # =================================================
 
             data = extract_json(
                 raw_content
@@ -1729,19 +1811,11 @@ def generate_ai_content(
                     "ERROR AI returned invalid JSON."
                 )
 
-                if attempt < MAX_AI_ATTEMPTS:
-
-                    time.sleep(
-                        3
-                    )
-
-                    continue
-
                 return None
 
-            # ------------------------------------------------
+            # =================================================
             # FIELD VALIDATION
-            # ------------------------------------------------
+            # =================================================
 
             if not validate_ai_fields(
                 data
@@ -1751,19 +1825,11 @@ def generate_ai_content(
                     "ERROR AI JSON fields invalid."
                 )
 
-                if attempt < MAX_AI_ATTEMPTS:
-
-                    time.sleep(
-                        3
-                    )
-
-                    continue
-
                 return None
 
-            # ------------------------------------------------
+            # =================================================
             # PROPER NOUN VALIDATION
-            # ------------------------------------------------
+            # =================================================
 
             if not validate_proper_nouns(
                 article_text,
@@ -1775,19 +1841,6 @@ def generate_ai_content(
                     "ERROR AI proper noun "
                     "validation failed."
                 )
-
-                if attempt < MAX_AI_ATTEMPTS:
-
-                    print(
-                        "Retrying Groq because "
-                        "proper noun validation failed..."
-                    )
-
-                    time.sleep(
-                        3
-                    )
-
-                    continue
 
                 return None
 
@@ -1806,43 +1859,31 @@ def generate_ai_content(
                 f"{error_text}"
             )
 
-            # ------------------------------------------------
+            # =================================================
             # RATE LIMIT
-            # ------------------------------------------------
+            #
+            # MAX_AI_ATTEMPTS = 1
+            # 所以这里不会再重复请求。
+            # =================================================
 
             if is_rate_limit_error(
                 error_text
             ):
 
-                if attempt >= MAX_AI_ATTEMPTS:
-
-                    print(
-                        "ERROR Rate limit reached. "
-                        "No more retries."
-                    )
-
-                    return None
-
-                wait_seconds = (
-                    extract_retry_seconds(
-                        error_text
-                    )
+                print(
+                    "ERROR Groq rate limit reached."
                 )
 
                 print(
-                    f"Rate limited. "
-                    f"Waiting {wait_seconds} seconds..."
+                    "No retry. "
+                    "This prevents another TPM hit."
                 )
 
-                time.sleep(
-                    wait_seconds
-                )
+                return None
 
-                continue
-
-            # ------------------------------------------------
+            # =================================================
             # PROMPT TOO LARGE
-            # ------------------------------------------------
+            # =================================================
 
             if is_prompt_too_large(
                 error_text
@@ -1852,23 +1893,7 @@ def generate_ai_content(
                     "ERROR Groq prompt too large."
                 )
 
-                print(
-                    "Do not retry the same prompt."
-                )
-
                 return None
-
-            # ------------------------------------------------
-            # OTHER ERROR
-            # ------------------------------------------------
-
-            if attempt < MAX_AI_ATTEMPTS:
-
-                time.sleep(
-                    5
-                )
-
-                continue
 
             return None
 
@@ -2096,17 +2121,17 @@ def main():
         f"Run #{run_count}"
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # CONFIG
-    # --------------------------------------------------------
+    # ========================================================
 
     if not check_config():
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # LOAD DATA
-    # --------------------------------------------------------
+    # ========================================================
 
     posted = load_posted()
 
@@ -2125,9 +2150,9 @@ def main():
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # GNEWS
-    # --------------------------------------------------------
+    # ========================================================
 
     articles = fetch_gnews()
 
@@ -2139,9 +2164,9 @@ def main():
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # SELECT NEWS
-    # --------------------------------------------------------
+    # ========================================================
 
     article = select_news(
         articles,
@@ -2152,9 +2177,9 @@ def main():
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # AI
-    # --------------------------------------------------------
+    # ========================================================
 
     ai_data = generate_ai_content(
         article,
@@ -2169,9 +2194,9 @@ def main():
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # TELEGRAM DATA
-    # --------------------------------------------------------
+    # ========================================================
 
     image_url = article.get(
         "_image",
@@ -2200,9 +2225,9 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # SEND PHOTO
-    # --------------------------------------------------------
+    # ========================================================
 
     sent = False
 
@@ -2213,9 +2238,9 @@ def main():
             caption
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # PHOTO FAILED -> SEND TEXT
-    # --------------------------------------------------------
+    # ========================================================
 
     if not sent:
 
@@ -2263,9 +2288,9 @@ def main():
             text
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # SAVE POSTED ONLY AFTER SUCCESS
-    # --------------------------------------------------------
+    # ========================================================
 
     if sent:
 

@@ -9,8 +9,7 @@ from openai import OpenAI
 
 
 # ============================================================
-# MYBUZZ NEWS BOT
-# V7
+# MYBUZZ NEWS BOT V7
 # ============================================================
 
 
@@ -26,46 +25,15 @@ GROQ_MODEL = "openai/gpt-oss-20b"
 REQUEST_TIMEOUT = 20
 
 MAX_GNEWS_ARTICLES = 10
-MAX_POSTED = 1000
 MAX_GNEWS_BATCHES = 5
 
+MAX_POSTED = 1000
 
-# ============================================================
-# GROQ CONFIG
-# ============================================================
-
-# User requested: no retry
+# 不重试 Groq
 MAX_AI_ATTEMPTS = 1
 
 AI_MAX_COMPLETION_TOKENS = 1200
-
 AI_REASONING_EFFORT = "low"
-
-
-# ============================================================
-# PROMPT LIMITS
-# ============================================================
-
-MAX_TITLE_CHARS = 500
-MAX_DESCRIPTION_CHARS = 1600
-MAX_CONTENT_CHARS = 3500
-
-MAX_RELEVANT_TERMS = 80
-
-MAX_TRANSLATION_RULE_CHARS = 2200
-MAX_NEWS_STRUCTURE_CHARS = 1800
-MAX_MALAY_STYLE_CHARS = 1800
-MAX_CHINESE_STYLE_CHARS = 1800
-
-MAX_LOCAL_ENFORCEMENT_CHARS = 1200
-MAX_PROPER_NAME_RULES_CHARS = 1600
-MAX_MONEY_RULES_CHARS = 1000
-MAX_NUMBER_RULES_CHARS = 1000
-
-
-# ============================================================
-# TELEGRAM LIMITS
-# ============================================================
 
 TELEGRAM_CAPTION_LIMIT = 1024
 TELEGRAM_TEXT_LIMIT = 4000
@@ -75,26 +43,13 @@ TELEGRAM_TEXT_LIMIT = 4000
 # FILES
 # ============================================================
 
-DATA_DIR = "."
-
-TERMS_FILE = os.path.join(
-    DATA_DIR,
-    "malaysia_terms.json"
-)
-
-POSTED_FILE = os.path.join(
-    DATA_DIR,
-    "posted.json"
-)
-
-STATE_FILE = os.path.join(
-    DATA_DIR,
-    "bot_state.json"
-)
+TERMS_FILE = "malaysia_terms.json"
+POSTED_FILE = "posted.json"
+STATE_FILE = "bot_state.json"
 
 
 # ============================================================
-# ENVIRONMENT VARIABLES
+# ENV
 # ============================================================
 
 GNEWS_API_KEY = os.getenv(
@@ -139,7 +94,7 @@ if GROQ_API_KEY:
 
 def clean_text(text):
 
-    if not text:
+    if text is None:
         return ""
 
     text = str(text)
@@ -173,7 +128,6 @@ def limit_text(
     )
 
     if len(text) <= max_chars:
-
         return text
 
     return (
@@ -189,8 +143,8 @@ def normalize_url(url):
 
     url = str(url).strip()
 
-    # Remove URL fragment only.
-    # Query parameters are preserved.
+    # 只删除 #fragment
+    # 不删除 query parameters
     return url.split("#")[0]
 
 
@@ -232,6 +186,68 @@ def article_id(article):
             "utf-8"
         )
     ).hexdigest()
+
+
+# ============================================================
+# CONFIG CHECK
+# ============================================================
+
+def check_config():
+
+    print(
+        "Checking API configuration..."
+    )
+
+    missing = []
+
+    if not GNEWS_API_KEY:
+        missing.append(
+            "GNEWS_API_KEY"
+        )
+
+    if not GROQ_API_KEY:
+        missing.append(
+            "GROQ_API_KEY"
+        )
+
+    if not TELEGRAM_BOT_TOKEN:
+        missing.append(
+            "TELEGRAM_BOT_TOKEN"
+        )
+
+    if not TELEGRAM_CHAT_ID:
+        missing.append(
+            "TELEGRAM_CHAT_ID"
+        )
+
+    if missing:
+
+        print(
+            "ERROR Missing environment variables:"
+        )
+
+        for item in missing:
+            print(
+                f"  - {item}"
+            )
+
+        return False
+
+    if not os.path.exists(
+        TERMS_FILE
+    ):
+
+        print(
+            f"ERROR Missing {TERMS_FILE}"
+        )
+
+        return False
+
+    print(
+        "API configuration OK."
+    )
+
+    return True
 
 
 # ============================================================
@@ -355,7 +371,7 @@ def load_state():
     except Exception as e:
 
         print(
-            f"WARNING failed to load bot_state.json: {e}"
+            f"WARNING state load failed: {e}"
         )
 
     return {
@@ -383,7 +399,7 @@ def save_state(state):
     except Exception as e:
 
         print(
-            f"WARNING failed to save bot_state.json: {e}"
+            f"WARNING state save failed: {e}"
         )
 
 
@@ -411,60 +427,6 @@ def increase_run_counter():
     return state[
         "run_count"
     ]
-
-
-# ============================================================
-# CONFIG CHECK
-# ============================================================
-
-def check_config():
-
-    missing = []
-
-    if not GNEWS_API_KEY:
-
-        missing.append(
-            "GNEWS_API_KEY"
-        )
-
-    if not GROQ_API_KEY:
-
-        missing.append(
-            "GROQ_API_KEY"
-        )
-
-    if not TELEGRAM_BOT_TOKEN:
-
-        missing.append(
-            "TELEGRAM_BOT_TOKEN"
-        )
-
-    if not TELEGRAM_CHAT_ID:
-
-        missing.append(
-            "TELEGRAM_CHAT_ID"
-        )
-
-    if missing:
-
-        print(
-            "ERROR Missing environment variables: "
-            + ", ".join(missing)
-        )
-
-        return False
-
-    if not os.path.exists(
-        TERMS_FILE
-    ):
-
-        print(
-            f"ERROR Missing {TERMS_FILE}"
-        )
-
-        return False
-
-    return True
 
 
 # ============================================================
@@ -506,6 +468,23 @@ def fetch_gnews():
                 f"{response.status_code}"
             )
 
+            # =================================================
+            # 429
+            # =================================================
+
+            if response.status_code == 429:
+
+                print(
+                    "WARNING GNews rate limit "
+                    "reached (429)."
+                )
+
+                print(
+                    "Stopping further GNews requests."
+                )
+
+                break
+
             response.raise_for_status()
 
             data = response.json()
@@ -521,10 +500,11 @@ def fetch_gnews():
             ):
 
                 print(
-                    f"GNews batch {batch} returned invalid data."
+                    f"GNews batch {batch} returned "
+                    f"invalid articles data."
                 )
 
-                continue
+                break
 
             print(
                 f"GNews batch {batch} returned "
@@ -533,26 +513,73 @@ def fetch_gnews():
 
             if not articles:
 
+                print(
+                    "No more GNews articles."
+                )
+
                 break
 
             all_articles.extend(
                 articles
             )
 
-        except Exception as e:
+        except requests.HTTPError as e:
 
             print(
-                f"ERROR GNews batch {batch} failed: {e}"
+                f"ERROR GNews batch {batch} failed: "
+                f"{e}"
             )
 
             break
 
+        except Exception as e:
+
+            print(
+                f"ERROR GNews batch {batch} failed: "
+                f"{e}"
+            )
+
+            break
+
+    # ========================================================
+    # Remove duplicate URLs
+    # ========================================================
+
+    unique_articles = []
+
+    seen_urls = set()
+
+    for article in all_articles:
+
+        url = normalize_url(
+            article.get(
+                "url",
+                ""
+            )
+        )
+
+        if not url:
+
+            continue
+
+        if url in seen_urls:
+
+            continue
+
+        seen_urls.add(
+            url
+        )
+
+        unique_articles.append(
+            article
+        )
+
     print(
         f"GNews total articles collected: "
-        f"{len(all_articles)}"
+        f"{len(unique_articles)}"
     )
 
-    return all_articles
+    return unique_articles
 
 
 # ============================================================
@@ -596,18 +623,14 @@ def get_article_image(url):
 
         if og_image:
 
-            content = (
-                og_image
-                .get(
-                    "content",
-                    ""
-                )
-                .strip()
-            )
+            image = og_image.get(
+                "content",
+                ""
+            ).strip()
 
-            if content:
+            if image:
 
-                return content
+                return image
 
         # twitter:image
         twitter_image = soup.find(
@@ -619,18 +642,14 @@ def get_article_image(url):
 
         if twitter_image:
 
-            content = (
-                twitter_image
-                .get(
-                    "content",
-                    ""
-                )
-                .strip()
-            )
+            image = twitter_image.get(
+                "content",
+                ""
+            ).strip()
 
-            if content:
+            if image:
 
-                return content
+                return image
 
     except Exception as e:
 
@@ -678,13 +697,8 @@ def select_news(
         )
 
         print(
-            f"Checking article {index}: "
-            f"{title}"
+            f"Checking article {index}: {title}"
         )
-
-        # ====================================================
-        # ALREADY POSTED
-        # ====================================================
 
         if aid in posted_set:
 
@@ -694,10 +708,6 @@ def select_news(
 
             continue
 
-        # ====================================================
-        # NO TITLE
-        # ====================================================
-
         if not title:
 
             print(
@@ -706,10 +716,6 @@ def select_news(
 
             continue
 
-        # ====================================================
-        # NO URL
-        # ====================================================
-
         if not url:
 
             print(
@@ -717,10 +723,6 @@ def select_news(
             )
 
             continue
-
-        # ====================================================
-        # IMAGE
-        # ====================================================
 
         image = (
             article.get(
@@ -741,12 +743,7 @@ def select_news(
 
             continue
 
-        # ====================================================
-        # SELECTED
-        # ====================================================
-
         article["_id"] = aid
-
         article["_image"] = image
 
         source = (
@@ -778,15 +775,14 @@ def select_news(
         return article
 
     print(
-        "No suitable new article found "
-        "after checking all articles."
+        "No suitable new article found."
     )
 
     return None
 
 
 # ============================================================
-# LOAD TERMS
+# LOAD DICTIONARY
 # ============================================================
 
 def load_terms():
@@ -809,7 +805,7 @@ def load_terms():
         ):
 
             raise ValueError(
-                "malaysia_terms.json root must be object"
+                "Root must be a JSON object."
             )
 
         print(
@@ -822,7 +818,7 @@ def load_terms():
     except json.JSONDecodeError as e:
 
         print(
-            "ERROR malaysia_terms.json contains invalid JSON:"
+            "ERROR malaysia_terms.json invalid JSON:"
         )
 
         print(
@@ -834,36 +830,48 @@ def load_terms():
     except Exception as e:
 
         print(
-            f"ERROR failed to load malaysia_terms.json: {e}"
+            f"ERROR dictionary loading failed: {e}"
         )
 
         return {}
 
 
 # ============================================================
-# NON-TERM CATEGORIES
+# NON TERM CATEGORIES
 # ============================================================
 
 NON_TERM_CATEGORIES = {
+
     "MALAY_STYLE",
     "CHINESE_STYLE",
+
     "TRANSLATION_RULES",
     "NEWS_STRUCTURE",
+
     "LOCAL_TERM_ENFORCEMENT",
+
+    "ANTI_MACHINE_TRANSLATION",
+
+    "ANTI_MACHINE_TRANSLATION_RULES",
+
     "proper_name_rules",
     "PROPER_NAME_RULES",
+
     "money_rules",
     "MONEY_RULES",
+
     "number_rules",
     "NUMBER_RULES"
 }
 
 
 # ============================================================
-# KEEP ORIGINAL DETECTION
+# KEEP ORIGINAL
 # ============================================================
 
-def is_keep_original(value):
+def is_keep_original(
+    value
+):
 
     if not isinstance(
         value,
@@ -899,24 +907,27 @@ def flatten_terms(data):
 
             continue
 
-        for original, translated in values.items():
+        for source, target in values.items():
 
-            original_text = clean_text(
-                original
+            source = clean_text(
+                source
             )
 
-            if not original_text:
+            if not source:
 
                 continue
 
+            # =================================================
             # Simple mapping
+            # =================================================
+
             if isinstance(
-                translated,
+                target,
                 str
             ):
 
                 target = clean_text(
-                    translated
+                    target
                 )
 
                 if not target:
@@ -925,46 +936,54 @@ def flatten_terms(data):
 
                 result.append({
                     "category": category,
-                    "source": original_text,
+                    "source": source,
                     "target": target,
-                    "keep_original": is_keep_original(
-                        target
-                    )
+                    "keep_original":
+                        is_keep_original(
+                            target
+                        )
                 })
 
-            # Nested mapping:
-            # only flatten simple string children
+            # =================================================
+            # Nested mapping
+            # =================================================
+
             elif isinstance(
-                translated,
+                target,
                 dict
             ):
 
-                for child_key, child_value in translated.items():
+                for child_source, child_target in target.items():
 
                     if not isinstance(
-                        child_value,
+                        child_target,
                         str
                     ):
 
                         continue
 
-                    child_value = clean_text(
-                        child_value
+                    child_source = clean_text(
+                        child_source
                     )
 
-                    if not child_value:
+                    child_target = clean_text(
+                        child_target
+                    )
 
+                    if not child_source:
+                        continue
+
+                    if not child_target:
                         continue
 
                     result.append({
                         "category": category,
-                        "source": clean_text(
-                            child_key
-                        ),
-                        "target": child_value,
-                        "keep_original": is_keep_original(
-                            child_value
-                        )
+                        "source": child_source,
+                        "target": child_target,
+                        "keep_original":
+                            is_keep_original(
+                                child_target
+                            )
                     })
 
     return result
@@ -1027,10 +1046,10 @@ def find_relevant_terms(
 
             continue
 
-        source_lower = source.lower()
-
-        # Normal substring match
-        if source_lower in article_text_lower:
+        if (
+            source.lower()
+            in article_text_lower
+        ):
 
             matches.append(
                 item
@@ -1040,7 +1059,7 @@ def find_relevant_terms(
                 key
             )
 
-            if len(matches) >= MAX_RELEVANT_TERMS:
+            if len(matches) >= 80:
 
                 break
 
@@ -1057,13 +1076,16 @@ def build_terms_text(
 
     if not relevant_terms:
 
-        return (
-            "No dictionary terms detected."
-        )
+        return "No dictionary terms detected."
 
     lines = []
 
     for item in relevant_terms:
+
+        category = item.get(
+            "category",
+            ""
+        )
 
         source = item.get(
             "source",
@@ -1072,11 +1094,6 @@ def build_terms_text(
 
         target = item.get(
             "target",
-            ""
-        )
-
-        category = item.get(
-            "category",
             ""
         )
 
@@ -1103,10 +1120,11 @@ def build_terms_text(
 
 
 # ============================================================
-# VERBOSE RULE KEYS
+# RULE HELPERS
 # ============================================================
 
 VERBOSE_RULE_KEYS = {
+
     "examples",
     "example",
     "EXAMPLES",
@@ -1143,10 +1161,6 @@ VERBOSE_RULE_KEYS = {
 }
 
 
-# ============================================================
-# COMPACT RULE VALUE
-# ============================================================
-
 def compact_rule_value(
     value
 ):
@@ -1160,11 +1174,7 @@ def compact_rule_value(
 
         for key, child in value.items():
 
-            key_text = str(
-                key
-            )
-
-            if key_text in VERBOSE_RULE_KEYS:
+            if str(key) in VERBOSE_RULE_KEYS:
 
                 continue
 
@@ -1183,9 +1193,7 @@ def compact_rule_value(
 
                 continue
 
-            result[key] = (
-                compact_child
-            )
+            result[key] = compact_child
 
         return result
 
@@ -1249,10 +1257,6 @@ def compact_rule_value(
     return value
 
 
-# ============================================================
-# BUILD RULE TEXT
-# ============================================================
-
 def build_rule_text(
     data,
     category,
@@ -1288,12 +1292,6 @@ def build_rule_text(
 
         return text
 
-    print(
-        f"WARNING {category} rules too long: "
-        f"{len(text)} chars. "
-        f"Reducing to {max_chars}."
-    )
-
     return (
         text[:max_chars]
         + "..."
@@ -1313,7 +1311,7 @@ def build_source_article(
             "title",
             ""
         ),
-        MAX_TITLE_CHARS
+        500
     )
 
     description = limit_text(
@@ -1321,7 +1319,7 @@ def build_source_article(
             "description",
             ""
         ),
-        MAX_DESCRIPTION_CHARS
+        1600
     )
 
     content = limit_text(
@@ -1329,7 +1327,7 @@ def build_source_article(
             "content",
             ""
         ),
-        MAX_CONTENT_CHARS
+        3500
     )
 
     source = limit_text(
@@ -1357,7 +1355,7 @@ def build_source_article(
 
 
 # ============================================================
-# BUILD HARD RULES
+# HARD RULES
 # ============================================================
 
 def build_hard_rules(
@@ -1366,103 +1364,76 @@ def build_hard_rules(
 
     rules = []
 
-    # ========================================================
-    # Oriental Kopi
-    # ========================================================
-
     rules.append(
-        "Oriental Kopi / Oriental Coffee in Chinese must be "
-        "translated as 华阳咖啡, never 东方咖啡."
+        "Oriental Kopi / Oriental Coffee in Chinese "
+        "must be 华阳咖啡, never 东方咖啡."
     )
-
-    # ========================================================
-    # Mamak
-    # ========================================================
 
     rules.append(
         "mamak in Malaysian Chinese must be 嘛嘛档. "
-        "In Malaysian Malay, keep mamak or use gerai mamak/"
+        "In Malaysian Malay use mamak, gerai mamak or "
         "restoran mamak according to context."
     )
 
-    # ========================================================
-    # Malaysia local style
-    # ========================================================
-
     rules.append(
         "Use Malaysian Chinese terminology, not Mainland "
-        "Chinese terminology, when a Malaysian term exists."
+        "Chinese terminology."
     )
 
     rules.append(
         "Use Malaysian Malay, not Indonesian Malay."
     )
 
-    # ========================================================
-    # Numbers
-    # ========================================================
-
     rules.append(
         "Never change numbers, percentages, dates, times "
         "or monetary values."
     )
-
-    # ========================================================
-    # Uncertainty
-    # ========================================================
 
     rules.append(
         "Expected, projected, likely, may, could, alleged "
         "and suspected must remain uncertain."
     )
 
-    # ========================================================
-    # No invented names
-    # ========================================================
-
     rules.append(
         "Never invent a Chinese name for a person if the "
         "dictionary does not provide one."
     )
 
-    # ========================================================
-    # KEEP ORIGINAL
-    # ========================================================
+    keep_original = []
 
-    keep_original_terms = []
-
-    all_terms = flatten_terms(
+    for item in flatten_terms(
         terms_data
-    )
-
-    for item in all_terms:
+    ):
 
         if item.get(
             "keep_original",
             False
         ):
 
-            keep_original_terms.append(
-                item.get(
-                    "source",
-                    ""
-                )
+            source = item.get(
+                "source",
+                ""
             )
 
-    if keep_original_terms:
+            if source:
+
+                keep_original.append(
+                    source
+                )
+
+    if keep_original:
 
         rules.append(
-            "The following brands must remain exactly as "
-            "written: "
+            "These brands must remain exactly as written: "
             +
             ", ".join(
-                keep_original_terms
+                keep_original
             )
         )
 
     return "\n".join(
-        "- " + item
-        for item in rules
+        "- " + rule
+        for rule in rules
     )
 
 
@@ -1476,12 +1447,6 @@ def build_groq_prompt(
     terms_data
 ):
 
-    source_article = (
-        build_source_article(
-            article
-        )
-    )
-
     terms_text = (
         build_terms_text(
             relevant_terms
@@ -1492,7 +1457,7 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "TRANSLATION_RULES",
-            MAX_TRANSLATION_RULE_CHARS
+            2200
         )
     )
 
@@ -1500,7 +1465,7 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "NEWS_STRUCTURE",
-            MAX_NEWS_STRUCTURE_CHARS
+            1800
         )
     )
 
@@ -1508,7 +1473,7 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "MALAY_STYLE",
-            MAX_MALAY_STYLE_CHARS
+            1800
         )
     )
 
@@ -1516,7 +1481,7 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "CHINESE_STYLE",
-            MAX_CHINESE_STYLE_CHARS
+            1800
         )
     )
 
@@ -1524,7 +1489,7 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "LOCAL_TERM_ENFORCEMENT",
-            MAX_LOCAL_ENFORCEMENT_CHARS
+            1200
         )
     )
 
@@ -1532,17 +1497,19 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "proper_name_rules",
-            MAX_PROPER_NAME_RULES_CHARS
+            1600
         )
     )
 
-    if proper_name_rules == "No proper_name_rules rules.":
+    if proper_name_rules == (
+        "No proper_name_rules rules."
+    ):
 
         proper_name_rules = (
             build_rule_text(
                 terms_data,
                 "PROPER_NAME_RULES",
-                MAX_PROPER_NAME_RULES_CHARS
+                1600
             )
         )
 
@@ -1550,17 +1517,19 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "money_rules",
-            MAX_MONEY_RULES_CHARS
+            1000
         )
     )
 
-    if money_rules == "No money_rules rules.":
+    if money_rules == (
+        "No money_rules rules."
+    ):
 
         money_rules = (
             build_rule_text(
                 terms_data,
                 "MONEY_RULES",
-                MAX_MONEY_RULES_CHARS
+                1000
             )
         )
 
@@ -1568,17 +1537,19 @@ def build_groq_prompt(
         build_rule_text(
             terms_data,
             "number_rules",
-            MAX_NUMBER_RULES_CHARS
+            1000
         )
     )
 
-    if number_rules == "No number_rules rules.":
+    if number_rules == (
+        "No number_rules rules."
+    ):
 
         number_rules = (
             build_rule_text(
                 terms_data,
                 "NUMBER_RULES",
-                MAX_NUMBER_RULES_CHARS
+                1000
             )
         )
 
@@ -1588,33 +1559,35 @@ def build_groq_prompt(
         )
     )
 
-    prompt = f"""
-You are MYBUZZ NEWS's professional Malaysian news editor,
-fact checker and bilingual translator.
+    source_article = (
+        build_source_article(
+            article
+        )
+    )
 
-Your job is to rewrite ONE Malaysian news article into:
+    prompt = f"""
+You are MYBUZZ NEWS's professional Malaysian news editor
+and bilingual translator.
+
+Rewrite ONE Malaysian news article into:
 
 1. Natural Malaysian Chinese
 2. Natural Malaysian Malay
 
-The result will be published on a Malaysian news Telegram channel.
-
 ============================================================
-HIGHEST PRIORITY
+PRIORITY
 ============================================================
 
-1. FACTUAL ACCURACY
-2. PRESERVE NAMES
-3. PRESERVE PLACES
-4. PRESERVE NUMBERS
-5. PRESERVE MONEY VALUES
-6. PRESERVE DATES AND TIMES
-7. PRESERVE ATTRIBUTION
-8. PRESERVE UNCERTAINTY
-9. USE DICTIONARY TERMS
-10. NATURAL MALAYSIAN NEWS LANGUAGE
-
-Never sacrifice factual accuracy for style.
+1. Factual accuracy
+2. Names
+3. Places
+4. Numbers
+5. Money
+6. Dates and times
+7. Attribution
+8. Uncertainty
+9. Dictionary terms
+10. Natural Malaysian news language
 
 ============================================================
 ABSOLUTE RULES
@@ -1622,79 +1595,73 @@ ABSOLUTE RULES
 
 - Never invent facts.
 - Never invent people.
-- Never invent organizations.
 - Never invent places.
+- Never invent organizations.
 - Never invent dates.
 - Never invent numbers.
-- Never invent money amounts.
+- Never invent money.
 - Never invent quotes.
-- Never add background information not present in the source.
+- Never add unsupported information.
 - Never add opinions.
 - Never speculate.
-- Never change the meaning of the source.
-- Do not make allegations sound like confirmed facts.
-- Do not make expected/projected/likely events sound completed.
-- Do not make suspected/alleged people sound guilty.
-- Do not change numerical values.
+- Never change the meaning.
+- Allegations must remain allegations.
+- Suspicions must remain suspicions.
+- Expected events must remain expected.
+- Projected figures must remain projected.
+- Preserve all important numbers exactly.
 
 ============================================================
-MALAYSIA LOCALIZATION
+LOCAL MALAYSIAN TERMS
 ============================================================
 
-Use Malaysian Chinese, not Mainland Chinese.
-
-Use Malaysian Malay, not Indonesian Malay.
-
-Examples:
-
-Oriental Kopi
-=> 华阳咖啡
+Oriental Kopi / Oriental Coffee
+=> 华阳咖啡 in Chinese.
 
 mamak
-=> 嘛嘛档 in Chinese
-=> mamak / gerai mamak / restoran mamak in Malay
+=> 嘛嘛档 in Chinese.
 
 teh tarik
-=> 拉茶
+=> 拉茶.
 
 kopi o
-=> 咖啡乌
+=> 咖啡乌.
 
 kopitiam
-=> 咖啡店
+=> 咖啡店.
 
 pasar malam
-=> 夜市
+=> 夜市.
 
 wet market
-=> 湿巴刹
+=> 湿巴刹.
 
 hawker centre
-=> 小贩中心
+=> 小贩中心.
 
 kampung
-=> 甘榜
+=> 甘榜.
 
 Hari Kebangsaan
-=> 国庆日
+=> 国庆日.
 
 Hari Malaysia
-=> 马来西亚日
+=> 马来西亚日.
 
 Jalur Gemilang
-=> 马来西亚国旗
+=> 马来西亚国旗.
 
 flood
-=> 水灾
+=> 水灾.
 
 flash flood
-=> 突发水灾
+=> 突发水灾.
 
 landslide
-=> 土崩
+=> 土崩.
 
 haze
-=> 烟霾
+=> 烟霾.
 
 ============================================================
 HARD RULES
@@ -1703,16 +1670,10 @@ HARD RULES
 {hard_rules}
 
 ============================================================
-RELEVANT DICTIONARY TERMS
+DICTIONARY TERMS
 ============================================================
 
 {terms_text}
-
-Use these mappings whenever the source contains the
-corresponding term.
-
-If a dictionary item says KEEP ORIGINAL, keep the brand name
-exactly as written.
 
 ============================================================
 TRANSLATION RULES
@@ -1727,13 +1688,13 @@ NEWS STRUCTURE
 {news_structure}
 
 ============================================================
-MALAYSIAN MALAY STYLE
+MALAY STYLE
 ============================================================
 
 {malay_style}
 
 ============================================================
-MALAYSIAN CHINESE STYLE
+CHINESE STYLE
 ============================================================
 
 {chinese_style}
@@ -1763,172 +1724,70 @@ NUMBER RULES
 {number_rules}
 
 ============================================================
-CHINESE NEWS REQUIREMENTS
+CHINESE
 ============================================================
 
-Write like a Malaysian Chinese news portal.
+Use modern Malaysian Chinese news language.
 
 Headline:
-- Short.
-- Direct.
-- Natural.
-- Factual.
-- Do not translate the English headline word-for-word.
-- Do not use clickbait.
-- Do not add facts.
+- concise
+- factual
+- natural
+- no clickbait
+- do not translate English word-for-word
 
 Body:
-- 1 to 2 concise sentences.
-- Put the main fact first.
-- Preserve important context.
-- Natural Malaysian Chinese.
-- Avoid Mainland Chinese news style.
-- Avoid machine translation.
-- Avoid unnecessary formal phrases.
-- Do not repeat the headline.
+- 1 to 2 concise sentences
+- main fact first
+- preserve important context
+- do not repeat the headline
 
-Use established Malaysian Chinese names from the dictionary.
-
-Do NOT automatically translate "bridge" as "桥梁".
-Choose a natural expression such as:
-- 媒介
-- 纽带
-- 拉近……与……的距离
-
-according to context.
+Do not invent Chinese names.
 
 ============================================================
-MALAY NEWS REQUIREMENTS
+MALAY
 ============================================================
 
-Write like a modern Malaysian Malay news portal.
+Use modern Malaysian Malay news language.
+
+Do NOT use Indonesian vocabulary.
 
 Headline:
-- Short.
-- Direct.
-- Natural.
-- Factual.
-- Do not translate English headline word-for-word.
-- Avoid Indonesian vocabulary.
-- Do not use clickbait.
-- Do not add facts.
+- concise
+- factual
+- natural
+- no clickbait
 
 Body:
-- 1 to 2 concise sentences.
-- Main fact first.
-- Natural Malaysian Malay.
-- Avoid machine translation.
-- Avoid unnecessarily formal bureaucratic language.
-- Do not repeat the headline.
-
-Use:
-- dijangka
-- diunjurkan
-- diramalkan
-- menurut
-- berkata
-- mengumumkan
-- mengesahkan
-- mendedahkan
-- mencatatkan
-- meningkat
-- menurun
-- susulan
-- turut
-- sekali gus
-
-when appropriate.
-
-Do not automatically translate "bridge" as "jambatan".
-Use natural Malaysian Malay such as:
-- menjadi medium
-- menjadi wadah
-- menjadi penghubung
-- mendekatkan
-
-according to context.
-
-============================================================
-DATELINE
-============================================================
-
-Do not force a dateline into the body.
-
-If location/date is clearly provided, it may be naturally included.
-
-Chinese examples:
-（吉隆坡2日讯）
-（芙蓉2日）
-
-Malay examples:
-KUALA LUMPUR, 2 Sept —
-SEREMBAN, 2 Sept —
-
-But do not invent a location or date.
+- 1 to 2 concise sentences
+- main fact first
+- natural Malaysian Malay
 
 ============================================================
 NUMBERS AND MONEY
 ============================================================
 
-This is extremely important.
+Never change numerical values.
 
-Do NOT change numerical values.
+85亿 = 8.5 billion
+8.5 billion = 85亿
+85 billion = 850亿
 
-Examples:
-
-85亿
-=> 8.5 billion
-
-8.5 billion
-=> 85亿
-
-85 billion
-=> 850亿
-
-RM85亿
-=> RM8.5 bilion
-
-RM8.5 bilion
-=> RM85亿
-
-RM85 bilion
-=> RM850亿
-
-Never translate:
-85亿
-as
-85 billion
-
-Never round numbers unless the source already rounded them.
+RM85亿 = RM8.5 bilion
+RM8.5 bilion = RM85亿
+RM85 bilion = RM850亿
 
 ============================================================
 UNCERTAINTY
 ============================================================
 
-Preserve uncertainty exactly.
-
-expected
-=> 预计 / dijangka
-
-projected
-=> 预计 / diunjurkan
-
-likely
-=> 可能 / berkemungkinan
-
-may
-=> 可能 / mungkin
-
-could
-=> 可能 / boleh
-
-alleged
-=> 被指 / didakwa
-
-suspected
-=> 涉嫌 / disyaki
-
-Do not turn an allegation into a confirmed fact.
+expected = 预计 / dijangka
+projected = 预计 / diunjurkan
+likely = 可能 / berkemungkinan
+may = 可能 / mungkin
+could = 可能 / boleh
+alleged = 被指 / didakwa
+suspected = 涉嫌 / disyaki
 
 ============================================================
 OUTPUT
@@ -1936,16 +1795,7 @@ OUTPUT
 
 Return ONLY valid JSON.
 
-No Markdown.
-No code fence.
-No explanation.
-No emojis.
-No source.
-No URL.
-No "Source".
-No "Read more".
-
-Exactly these four fields:
+Exactly:
 
 {{
   "chinese_title": "...",
@@ -1953,6 +1803,13 @@ Exactly these four fields:
   "malay_title": "...",
   "malay_body": "..."
 }}
+
+No Markdown.
+No code fence.
+No explanation.
+No emojis.
+No URL.
+No source line.
 
 ============================================================
 SOURCE ARTICLE
@@ -1978,7 +1835,6 @@ def extract_json(
 
     text = text.strip()
 
-    # Remove code fence
     text = re.sub(
         r"^```(?:json)?\s*",
         "",
@@ -2004,7 +1860,6 @@ def extract_json(
 
         pass
 
-    # Find JSON object
     start = text.find(
         "{"
     )
@@ -2041,7 +1896,7 @@ def extract_json(
 
 
 # ============================================================
-# VALIDATE AI FIELDS
+# AI FIELD VALIDATION
 # ============================================================
 
 def validate_ai_fields(
@@ -2052,6 +1907,10 @@ def validate_ai_fields(
         data,
         dict
     ):
+
+        print(
+            "ERROR AI output is not an object."
+        )
 
         return False
 
@@ -2074,67 +1933,22 @@ def validate_ai_fields(
         ):
 
             print(
-                f"Missing or invalid field: {key}"
+                f"ERROR invalid AI field: {key}"
             )
 
             return False
 
-        value = clean_text(
+        if not clean_text(
             value
-        )
-
-        if not value:
+        ):
 
             print(
-                f"Empty AI field: {key}"
-            )
-
-            return False
-
-        if len(value) > 5000:
-
-            print(
-                f"AI field too long: {key}"
+                f"ERROR empty AI field: {key}"
             )
 
             return False
 
     return True
-
-
-# ============================================================
-# FIND KEEP ORIGINAL TERMS
-# ============================================================
-
-def get_keep_original_terms(
-    terms_data
-):
-
-    terms = []
-
-    for item in flatten_terms(
-        terms_data
-    ):
-
-        if item.get(
-            "keep_original",
-            False
-        ):
-
-            source = clean_text(
-                item.get(
-                    "source",
-                    ""
-                )
-            )
-
-            if source:
-
-                terms.append(
-                    source
-                )
-
-    return terms
 
 
 # ============================================================
@@ -2147,43 +1961,55 @@ def validate_proper_nouns(
     relevant_terms
 ):
 
+    print(
+        "Running PROPER NOUN VALIDATOR V7.1"
+    )
+
     chinese_text = (
-        ai_data.get(
-            "chinese_title",
-            ""
+        clean_text(
+            ai_data.get(
+                "chinese_title",
+                ""
+            )
         )
         +
         " "
         +
-        ai_data.get(
-            "chinese_body",
-            ""
+        clean_text(
+            ai_data.get(
+                "chinese_body",
+                ""
+            )
         )
     )
 
     malay_text = (
-        ai_data.get(
-            "malay_title",
-            ""
+        clean_text(
+            ai_data.get(
+                "malay_title",
+                ""
+            )
         )
         +
         " "
         +
-        ai_data.get(
-            "malay_body",
-            ""
+        clean_text(
+            ai_data.get(
+                "malay_body",
+                ""
+            )
         )
     )
 
-    chinese_text_lower = (
+    chinese_lower = (
         chinese_text.lower()
     )
 
-    malay_text_lower = (
+    malay_lower = (
         malay_text.lower()
     )
 
-    article_text_lower = (
+    article_lower = (
         article_text.lower()
     )
 
@@ -2209,7 +2035,7 @@ def validate_proper_nouns(
 
         if (
             source.lower()
-            not in article_text_lower
+            not in article_lower
         ):
 
             continue
@@ -2217,6 +2043,14 @@ def validate_proper_nouns(
         if not target:
 
             continue
+
+        source_lower = (
+            source.lower()
+        )
+
+        target_lower = (
+            target.lower()
+        )
 
         # ====================================================
         # KEEP ORIGINAL
@@ -2227,16 +2061,10 @@ def validate_proper_nouns(
             False
         ):
 
-            source_lower = (
-                source.lower()
-            )
-
             if (
-                source_lower
-                not in chinese_text_lower
+                source_lower not in chinese_lower
                 and
-                source_lower
-                not in malay_text_lower
+                source_lower not in malay_lower
             ):
 
                 print(
@@ -2245,6 +2073,11 @@ def validate_proper_nouns(
                 )
 
                 return False
+
+            print(
+                f"  PASS KEEP ORIGINAL: "
+                f"{source}"
+            )
 
             continue
 
@@ -2257,32 +2090,34 @@ def validate_proper_nouns(
             target
         ):
 
-            source_lower = (
-                source.lower()
-            )
-
-            target_lower = (
-                target.lower()
-            )
-
             # =================================================
-            # IMPORTANT:
-            # Correct Chinese translation already exists.
-            # Do NOT reject just because the English source
-            # also appears somewhere in the Chinese output.
+            # THIS IS THE IMPORTANT FIX
+            #
+            # First check the translated Chinese target.
+            #
+            # Example:
+            #
+            # Bursa Malaysia
+            # =>
+            # 马来西亚交易所
+            #
+            # If target exists, PASS immediately.
             # =================================================
 
-            if target_lower in chinese_text_lower:
+            if target_lower in chinese_lower:
+
+                print(
+                    f"  PASS Chinese term: "
+                    f"{source} -> {target}"
+                )
 
                 continue
 
             # =================================================
-            # If English source remains and the correct
-            # Chinese translation is completely missing,
-            # reject it.
+            # Only fail if source remains AND target missing.
             # =================================================
 
-            if source_lower in chinese_text_lower:
+            if source_lower in chinese_lower:
 
                 print(
                     "Chinese proper noun not translated: "
@@ -2291,6 +2126,8 @@ def validate_proper_nouns(
 
                 return False
 
+            # Source not present in Chinese.
+            # Nothing to reject.
             continue
 
         # ====================================================
@@ -2298,16 +2135,13 @@ def validate_proper_nouns(
         # ====================================================
 
         if (
-            target.lower()
-            == source.lower()
+            target_lower
+            == source_lower
         ):
 
             continue
 
-        if (
-            source.lower()
-            in malay_text_lower
-        ):
+        if source_lower in malay_lower:
 
             print(
                 "Malay term may not follow dictionary: "
@@ -2315,6 +2149,10 @@ def validate_proper_nouns(
             )
 
             return False
+
+    print(
+        "PROPER NOUN VALIDATOR V7.1 PASS"
+    )
 
     return True
 
@@ -2346,34 +2184,33 @@ def validate_hard_local_terms(
         )
     )
 
+    chinese_lower = (
+        chinese.lower()
+    )
+
+    article_lower = (
+        article_text.lower()
+    )
+
     # ========================================================
     # Oriental Kopi
     # ========================================================
 
     oriental_present = (
         "oriental kopi"
-        in article_text.lower()
+        in article_lower
         or
         "oriental coffee"
-        in article_text.lower()
+        in article_lower
     )
 
     if oriental_present:
 
-        if (
-            "oriental kopi"
-            in chinese.lower()
-            or
-            "oriental coffee"
-            in chinese.lower()
-            or
-            "东方咖啡"
-            in chinese
-        ):
+        if "东方咖啡" in chinese:
 
             print(
                 "Hard validation failed: "
-                "Oriental Kopi should be 华阳咖啡."
+                "东方咖啡 is forbidden."
             )
 
             return False
@@ -2397,15 +2234,9 @@ def validate_hard_local_terms(
         flags=re.IGNORECASE
     ):
 
-        # If Chinese version refers to mamak,
-        # it should use 嘛嘛档.
-        chinese_has_mamak = (
-            "mamak"
-            in chinese.lower()
-        )
-
         if (
-            chinese_has_mamak
+            "mamak"
+            in chinese_lower
             and
             "嘛嘛档"
             not in chinese
@@ -2413,7 +2244,7 @@ def validate_hard_local_terms(
 
             print(
                 "Hard validation failed: "
-                "mamak should be 嘛嘛档 in Chinese."
+                "mamak should be 嘛嘛档."
             )
 
             return False
@@ -2422,59 +2253,7 @@ def validate_hard_local_terms(
 
 
 # ============================================================
-# RATE LIMIT
-# ============================================================
-
-def is_rate_limit_error(
-    error_text
-):
-
-    if not error_text:
-
-        return False
-
-    text = error_text.lower()
-
-    return (
-        "429" in text
-        or
-        "rate limit" in text
-        or
-        "tpm limit" in text
-        or
-        "too many requests" in text
-    )
-
-
-# ============================================================
-# PROMPT TOO LARGE
-# ============================================================
-
-def is_prompt_too_large(
-    error_text
-):
-
-    if not error_text:
-
-        return False
-
-    text = error_text.lower()
-
-    return (
-        "413" in text
-        or
-        "request too large" in text
-        or
-        "prompt is too long" in text
-        or
-        "context length" in text
-        or
-        "maximum context" in text
-    )
-
-
-# ============================================================
-# AI GENERATION
+# GROQ
 # ============================================================
 
 def generate_ai_content(
@@ -2485,7 +2264,7 @@ def generate_ai_content(
     if groq_client is None:
 
         print(
-            "ERROR Groq client not initialized."
+            "ERROR Groq client unavailable."
         )
 
         return None
@@ -2517,10 +2296,6 @@ def generate_ai_content(
         )
     )
 
-    # ========================================================
-    # FIND TERMS
-    # ========================================================
-
     all_terms = flatten_terms(
         terms_data
     )
@@ -2537,32 +2312,13 @@ def generate_ai_content(
         f"{len(relevant_terms)}"
     )
 
-    if relevant_terms:
+    for item in relevant_terms:
 
-        for item in relevant_terms:
-
-            if item.get(
-                "keep_original",
-                False
-            ):
-
-                print(
-                    f'  [{item["category"]}] '
-                    f'{item["source"]} '
-                    f'=> KEEP ORIGINAL'
-                )
-
-            else:
-
-                print(
-                    f'  [{item["category"]}] '
-                    f'{item["source"]} '
-                    f'=> {item["target"]}'
-                )
-
-    # ========================================================
-    # BUILD PROMPT
-    # ========================================================
+        print(
+            f'  [{item["category"]}] '
+            f'{item["source"]} => '
+            f'{item["target"]}'
+        )
 
     prompt = build_groq_prompt(
         article,
@@ -2575,19 +2331,14 @@ def generate_ai_content(
         f"{len(prompt)} characters"
     )
 
-    # ========================================================
-    # GROQ
-    # ========================================================
-
     for attempt in range(
         1,
         MAX_AI_ATTEMPTS + 1
     ):
 
         print(
-            f"Sending Groq request "
-            f"attempt {attempt}/"
-            f"{MAX_AI_ATTEMPTS}"
+            f"Sending Groq request attempt "
+            f"{attempt}/{MAX_AI_ATTEMPTS}"
         )
 
         try:
@@ -2631,9 +2382,7 @@ def generate_ai_content(
 
                 return None
 
-            choice = (
-                response.choices[0]
-            )
+            choice = response.choices[0]
 
             finish_reason = getattr(
                 choice,
@@ -2646,20 +2395,16 @@ def generate_ai_content(
                 f"{finish_reason}"
             )
 
-            raw_content = ""
+            content = ""
 
             if choice.message:
 
-                raw_content = (
+                content = (
                     choice.message.content
                     or ""
                 )
 
-            # =================================================
-            # EMPTY
-            # =================================================
-
-            if not raw_content:
+            if not content:
 
                 print(
                     "ERROR Groq returned empty content."
@@ -2667,58 +2412,40 @@ def generate_ai_content(
 
                 return None
 
-            # =================================================
-            # MAX TOKENS
-            # =================================================
-
             if finish_reason in (
                 "length",
                 "max_tokens"
             ):
 
                 print(
-                    "WARNING Groq response "
-                    "reached completion token limit."
-                )
-
-                print(
-                    "AI output incomplete. "
-                    "No retry."
+                    "ERROR Groq response "
+                    "reached token limit."
                 )
 
                 return None
 
-            # =================================================
-            # JSON
-            # =================================================
-
-            data = extract_json(
-                raw_content
+            ai_data = extract_json(
+                content
             )
 
-            if data is None:
+            if ai_data is None:
 
                 print(
                     "ERROR AI returned invalid JSON."
                 )
 
                 print(
-                    f"AI raw response: "
-                    f"{raw_content[:1000]}"
+                    content[:1000]
                 )
 
                 return None
 
-            # =================================================
-            # FIELD VALIDATION
-            # =================================================
-
             if not validate_ai_fields(
-                data
+                ai_data
             ):
 
                 print(
-                    "ERROR AI JSON fields invalid."
+                    "ERROR AI JSON validation failed."
                 )
 
                 return None
@@ -2729,7 +2456,7 @@ def generate_ai_content(
 
             if not validate_proper_nouns(
                 article_text,
-                data,
+                ai_data,
                 relevant_terms
             ):
 
@@ -2741,12 +2468,12 @@ def generate_ai_content(
                 return None
 
             # =================================================
-            # HARD LOCAL VALIDATION
+            # LOCAL TERM VALIDATION
             # =================================================
 
             if not validate_hard_local_terms(
                 article_text,
-                data
+                ai_data
             ):
 
                 print(
@@ -2760,52 +2487,13 @@ def generate_ai_content(
                 "AI generation successful."
             )
 
-            return data
+            return ai_data
 
         except Exception as e:
 
-            error_text = str(e)
-
             print(
-                f"ERROR Groq request failed: "
-                f"{error_text}"
+                f"ERROR Groq request failed: {e}"
             )
-
-            # =================================================
-            # RATE LIMIT
-            # =================================================
-
-            if is_rate_limit_error(
-                error_text
-            ):
-
-                print(
-                    "ERROR Groq rate limit reached."
-                )
-
-                print(
-                    "No retry."
-                )
-
-                return None
-
-            # =================================================
-            # PROMPT TOO LARGE
-            # =================================================
-
-            if is_prompt_too_large(
-                error_text
-            ):
-
-                print(
-                    "ERROR Groq prompt too large."
-                )
-
-                return None
-
-            # =================================================
-            # OTHER ERROR
-            # =================================================
 
             return None
 
@@ -2813,7 +2501,7 @@ def generate_ai_content(
 
 
 # ============================================================
-# TELEGRAM API
+# TELEGRAM URL
 # ============================================================
 
 def telegram_api_url(
@@ -2828,7 +2516,7 @@ def telegram_api_url(
 
 
 # ============================================================
-# TELEGRAM NEWS FORMAT
+# TELEGRAM HTML MESSAGE
 # ============================================================
 
 def build_telegram_news(
@@ -2836,48 +2524,40 @@ def build_telegram_news(
     source_url
 ):
 
-    chinese_title = clean_text(
-        ai_data.get(
-            "chinese_title",
-            ""
+    chinese_title = html.escape(
+        clean_text(
+            ai_data.get(
+                "chinese_title",
+                ""
+            )
         )
     )
 
-    chinese_body = clean_text(
-        ai_data.get(
-            "chinese_body",
-            ""
+    chinese_body = html.escape(
+        clean_text(
+            ai_data.get(
+                "chinese_body",
+                ""
+            )
         )
     )
 
-    malay_title = clean_text(
-        ai_data.get(
-            "malay_title",
-            ""
+    malay_title = html.escape(
+        clean_text(
+            ai_data.get(
+                "malay_title",
+                ""
+            )
         )
     )
 
-    malay_body = clean_text(
-        ai_data.get(
-            "malay_body",
-            ""
+    malay_body = html.escape(
+        clean_text(
+            ai_data.get(
+                "malay_body",
+                ""
+            )
         )
-    )
-
-    safe_chinese_title = html.escape(
-        chinese_title
-    )
-
-    safe_chinese_body = html.escape(
-        chinese_body
-    )
-
-    safe_malay_title = html.escape(
-        malay_title
-    )
-
-    safe_malay_body = html.escape(
-        malay_body
     )
 
     safe_url = html.escape(
@@ -2889,15 +2569,15 @@ def build_telegram_news(
         "🇲🇾 <b>MYBuzz NEWS</b>\n\n"
 
         "🇨🇳 <b>"
-        + safe_chinese_title
+        + chinese_title
         + "</b>\n"
-        + safe_chinese_body
+        + chinese_body
         + "\n\n"
 
         "🇲🇾 <b>"
-        + safe_malay_title
+        + malay_title
         + "</b>\n"
-        + safe_malay_body
+        + malay_body
         + "\n\n"
 
         "👉 <b>点击阅读完整新闻</b>\n"
@@ -2910,7 +2590,7 @@ def build_telegram_news(
 
 
 # ============================================================
-# TELEGRAM PLAIN NEWS FORMAT
+# TELEGRAM PLAIN MESSAGE
 # ============================================================
 
 def build_telegram_plain_text(
@@ -2971,7 +2651,7 @@ def build_telegram_plain_text(
 
 
 # ============================================================
-# SEND TELEGRAM PHOTO
+# TELEGRAM PHOTO
 # ============================================================
 
 def send_telegram_photo(
@@ -3006,39 +2686,30 @@ def send_telegram_photo(
         if response.status_code != 200:
 
             print(
-                f"Telegram error: "
-                f"{response.text[:1000]}"
+                response.text[:1000]
             )
 
             return False
 
         data = response.json()
 
-        if not data.get(
-            "ok"
-        ):
-
-            print(
-                f"Telegram API error: "
-                f"{data}"
+        return bool(
+            data.get(
+                "ok"
             )
-
-            return False
-
-        return True
+        )
 
     except Exception as e:
 
         print(
-            f"ERROR Telegram photo failed: "
-            f"{e}"
+            f"ERROR Telegram photo failed: {e}"
         )
 
         return False
 
 
 # ============================================================
-# SEND TELEGRAM TEXT
+# TELEGRAM TEXT
 # ============================================================
 
 def send_telegram_text(
@@ -3072,8 +2743,7 @@ def send_telegram_text(
         if response.status_code != 200:
 
             print(
-                f"Telegram error: "
-                f"{response.text[:1000]}"
+                response.text[:1000]
             )
 
             return False
@@ -3089,8 +2759,7 @@ def send_telegram_text(
     except Exception as e:
 
         print(
-            f"ERROR Telegram send failed: "
-            f"{e}"
+            f"ERROR Telegram text failed: {e}"
         )
 
         return False
@@ -3107,7 +2776,7 @@ def main():
     )
 
     print(
-        "MYBUZZ NEWS BOT V7"
+        "MYBUZZ NEWS BOT V7.1"
     )
 
     print(
@@ -3131,7 +2800,7 @@ def main():
         return
 
     # ========================================================
-    # LOAD DATA
+    # POSTED
     # ========================================================
 
     posted = load_posted()
@@ -3141,19 +2810,19 @@ def main():
         f"{len(posted)} records"
     )
 
+    # ========================================================
+    # DICTIONARY
+    # ========================================================
+
     terms_data = load_terms()
 
     if not terms_data:
 
         print(
-            "ERROR malaysia_terms.json is empty."
+            "ERROR Dictionary empty."
         )
 
         return
-
-    # ========================================================
-    # DICTIONARY SUMMARY
-    # ========================================================
 
     all_terms = flatten_terms(
         terms_data
@@ -3179,7 +2848,7 @@ def main():
         return
 
     # ========================================================
-    # SELECT NEWS
+    # SELECT
     # ========================================================
 
     article = select_news(
@@ -3209,13 +2878,8 @@ def main():
         return
 
     # ========================================================
-    # TELEGRAM DATA
+    # TELEGRAM
     # ========================================================
-
-    image_url = article.get(
-        "_image",
-        ""
-    )
 
     source_url = normalize_url(
         article.get(
@@ -3224,14 +2888,17 @@ def main():
         )
     )
 
-    telegram_news = (
-        build_telegram_news(
-            ai_data,
-            source_url
-        )
+    image_url = article.get(
+        "_image",
+        ""
     )
 
-    telegram_plain_text = (
+    caption = build_telegram_news(
+        ai_data,
+        source_url
+    )
+
+    plain_text = (
         build_telegram_plain_text(
             ai_data,
             source_url
@@ -3240,16 +2907,11 @@ def main():
 
     print(
         f"Telegram caption length: "
-        f"{len(telegram_news)}"
-    )
-
-    print(
-        f"Telegram text length: "
-        f"{len(telegram_plain_text)}"
+        f"{len(caption)}"
     )
 
     # ========================================================
-    # SEND PHOTO
+    # PHOTO
     # ========================================================
 
     sent = False
@@ -3257,24 +2919,26 @@ def main():
     if (
         image_url
         and
-        len(telegram_news)
+        len(caption)
         <= TELEGRAM_CAPTION_LIMIT
     ):
 
         sent = send_telegram_photo(
             image_url,
-            telegram_news
+            caption
         )
 
-    elif image_url:
+    else:
 
-        print(
-            "Telegram caption too long. "
-            "Using text message instead."
-        )
+        if image_url:
+
+            print(
+                "Telegram caption too long. "
+                "Using text."
+            )
 
     # ========================================================
-    # PHOTO FAILED -> TEXT
+    # TEXT FALLBACK
     # ========================================================
 
     if not sent:
@@ -3283,23 +2947,20 @@ def main():
             "Sending Telegram text message..."
         )
 
-        if len(
-            telegram_plain_text
-        ) > TELEGRAM_TEXT_LIMIT:
+        if len(plain_text) > TELEGRAM_TEXT_LIMIT:
 
             print(
-                "ERROR Telegram text exceeds "
-                "Telegram limit."
+                "ERROR Telegram text exceeds limit."
             )
 
             return
 
         sent = send_telegram_text(
-            telegram_plain_text
+            plain_text
         )
 
     # ========================================================
-    # SAVE POSTED ONLY AFTER SUCCESS
+    # SAVE ONLY AFTER SUCCESS
     # ========================================================
 
     if sent:
@@ -3333,7 +2994,7 @@ def main():
     )
 
     print(
-        "BOT FINISHED"
+        "MYBUZZ NEWS BOT FINISHED"
     )
 
     print(

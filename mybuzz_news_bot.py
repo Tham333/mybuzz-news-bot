@@ -1362,12 +1362,15 @@ CHINESE VERSION
 ============================================================
 
 - Use Simplified Chinese.
-- Natural Malaysian Chinese news style.
-- Keep unknown Malaysian proper nouns in original form.
+- Use natural Malaysian Chinese news style.
+- Keep unknown Malaysian proper nouns in their original form.
 - Use dictionary translations when available.
 - Do not use Taiwan-specific wording.
 - Do not use Hong Kong-specific wording.
 - Do not over-translate.
+- Chinese headlines must sound natural and professional.
+- Do not translate Malay sentences word-for-word.
+- Preserve the original meaning and facts.
 
 
 ============================================================
@@ -1379,6 +1382,129 @@ MALAY VERSION
 - Do not translate people's names.
 - Do not randomly translate place names.
 - Do not change official organization names unnecessarily.
+- Use natural Malaysian news-writing style.
+- Do not use awkward literal translations.
+
+
+============================================================
+CONTEXTUAL TRANSLATION RULES
+============================================================
+
+1. Do NOT translate Malay words literally when the literal
+   Chinese meaning sounds unnatural.
+
+2. Always translate according to the full sentence,
+   surrounding words and the actual news context.
+
+3. Common Malay words may have different Chinese meanings
+   depending on context. Do not force one fixed translation
+   for a word.
+
+4. NEVER translate individual words first and then simply
+   combine them into a Chinese sentence.
+
+5. Understand the complete Malay sentence first, then
+   produce natural Chinese.
+
+6. The word "santai" does NOT always mean "轻松".
+
+7. When "santai" describes a portrait, photo, painting,
+   expression or appearance, it may mean:
+   "自然", "亲切", "随和", "非正式" or "神态轻松",
+   depending on the actual context.
+
+8. Example:
+
+   "Potret santai Tunku Abdul Rahman"
+
+   Do NOT translate it as:
+
+   "轻松的东姑肖像"
+
+   Prefer a natural Chinese expression such as:
+
+   "东姑阿都拉曼亲切肖像"
+
+   "东姑阿都拉曼一幅神态自然的肖像"
+
+   "东姑阿都拉曼非正式肖像"
+
+   Choose the most natural expression according to
+   the actual article context.
+
+9. "menarik tumpuan" should NOT always be translated
+   literally as "吸引目光".
+
+   Depending on context, natural Chinese may include:
+   "引起关注", "吸引关注", "成为焦点",
+   "受到关注" or "成为亮点".
+
+10. "menjadi tarikan utama" should be translated according
+    to context. It may mean:
+    "成为主要亮点", "成为主要看点",
+    "成为焦点" or "成为主要吸引点".
+
+11. If a literal Chinese translation sounds unnatural,
+    rewrite it into natural Malaysian Chinese while
+    preserving the original meaning.
+
+12. Natural translation is more important than
+    word-for-word translation.
+
+13. Do not change the factual meaning when making
+    the Chinese sentence more natural.
+
+14. Do not add information that is not present in
+    the source article.
+
+15. Do not remove important factual information merely
+    to make the sentence shorter.
+
+16. Chinese headlines should be concise, natural,
+    professional and suitable for a Malaysian Chinese
+    news channel.
+
+17. Avoid unnatural structures such as:
+    "轻松的东姑肖像"
+    when the source context clearly describes
+    a relaxed, natural, informal or friendly portrait.
+
+
+============================================================
+TRANSLATION QUALITY CONTROL
+============================================================
+
+Before returning the final answer, silently check:
+
+1. Are all Malaysian people's names preserved correctly?
+
+2. Are all Malaysian place names preserved correctly?
+
+3. Are dictionary proper noun translations followed exactly?
+
+4. Did you accidentally invent a Chinese name?
+
+5. Did you translate any Malay word too literally?
+
+6. Does the Chinese headline sound natural to a
+   Malaysian Chinese reader?
+
+7. Does the Chinese body preserve the original facts?
+
+8. Does the Malay version sound natural to a
+   Malaysian Malay reader?
+
+9. Are dates, numbers, names, locations and titles
+   consistent with the source?
+
+10. Did you add any information that does not exist
+    in the source?
+
+11. Did you change the meaning of the original article?
+
+12. If a phrase has multiple possible meanings,
+    did you choose the meaning that best matches
+    the surrounding context?
 
 
 ============================================================
@@ -1386,16 +1512,31 @@ GENERAL RULES
 ============================================================
 
 1. Do NOT invent facts.
+
 2. Only use information contained in the source.
+
 3. Keep both Chinese and Malay versions short.
+
 4. Each body should be approximately 1-2 sentences.
+
 5. Do not include URLs.
+
 6. Do not use Markdown.
+
 7. Do not add hashtags.
+
 8. Do not mention AI.
+
 9. Do not add commentary.
+
 10. Do not add information that is not in the source.
-11. Return ONLY valid JSON.
+
+11. Do not create fictional names, places, organizations,
+    titles or events.
+
+12. Preserve all important factual information.
+
+13. Return ONLY valid JSON.
 
 
 ============================================================
@@ -1410,8 +1551,6 @@ Return exactly:
   "ms_title": "...",
   "ms_body": "..."
 }}
-"""
-
 
     # --------------------------------------------------------
     # AI RETRY

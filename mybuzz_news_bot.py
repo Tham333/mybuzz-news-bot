@@ -1,3 +1,4 @@
+````python
 import os
 import re
 import json
@@ -46,6 +47,14 @@ MAX_TRANSLATION_RULE_CHARS = 1600
 MAX_NEWS_STRUCTURE_CHARS = 900
 MAX_MALAY_STYLE_CHARS = 1100
 MAX_CHINESE_STYLE_CHARS = 1100
+
+
+# ============================================================
+# TELEGRAM LIMITS
+# ============================================================
+
+TELEGRAM_CAPTION_LIMIT = 1000
+TELEGRAM_TEXT_LIMIT = 4000
 
 
 # ============================================================
@@ -1184,20 +1193,54 @@ def build_groq_prompt(
 You are a professional Malaysian news editor and bilingual translator.
 
 TASK:
-Rewrite the source article into:
-1. Natural Malaysian Chinese news.
-2. Natural Malaysian Malay news.
+Create two short versions of the same Malaysian news story:
+1. Malaysian Chinese.
+2. Malaysian Malay.
+
+IMPORTANT:
+The two versions must contain the SAME facts.
+Do not make one version more detailed than the other.
 
 FACTUAL ACCURACY:
-- Preserve all important facts from the source.
+- Preserve important facts from the source.
 - Never invent facts.
-- Never invent names, places, organizations or numbers.
+- Never invent names, places, organizations, dates or numbers.
 - Never guess missing information.
-- Preserve uncertainty such as may, could, expected, according to, likely, etc.
+- Preserve uncertainty such as may, could, expected, according to and likely.
 - Use dictionary mappings when applicable.
 - Do not use Indonesian Malay.
 - Avoid literal machine translation.
-- Keep both versions concise and natural.
+
+CHINESE NEWS STYLE:
+- Write natural Malaysian Chinese news.
+- Do not translate the English headline word-for-word.
+- Create a natural Chinese news headline.
+- Prefer concise newspaper-style wording.
+- Use Malaysian place names and organizations according to the dictionary.
+- Keep the body factual and concise.
+- Do not use unnecessary introduction such as "（吉隆坡讯）".
+- Do not repeat the headline in the body.
+
+MALAY NEWS STYLE:
+- Write natural Malaysian Malay used by Malaysian news media.
+- Do not translate the English headline word-for-word.
+- Create a natural Malay news headline.
+- Use Malaysian spelling and terminology.
+- Keep the body factual and concise.
+- Do not use Indonesian expressions.
+- Do not repeat the headline in the body.
+
+HEADLINE:
+- Chinese title should be concise and natural.
+- Malay title should be concise and natural.
+- Prefer meaning-based news headlines instead of literal translation.
+- Do not add information not present in the source.
+
+BODY:
+- Chinese body: 1-2 concise sentences.
+- Malay body: 1-2 concise sentences.
+- Summarize the key event and important context.
+- Keep both versions similar in factual coverage.
 
 DICTIONARY:
 {terms_text}
@@ -1226,17 +1269,15 @@ RETURN ONLY JSON:
   "malay_body": "Malay news body"
 }}
 
-OUTPUT:
+OUTPUT RULES:
 - Valid JSON only.
 - No Markdown.
 - No code fence.
 - No explanation.
-- Chinese title: concise Malaysian news headline.
-- Malay title: concise Malaysian news headline.
-- Chinese body: 2-3 sentences.
-- Malay body: 2-3 sentences.
-- Do not repeat sentences.
-- Do not add unsupported facts.
+- No emojis.
+- Do not include source name.
+- Do not include URL.
+- Do not include labels such as Source or Read more.
 """
 
     return prompt.strip()
@@ -1467,7 +1508,7 @@ def validate_proper_nouns(
             continue
 
         # ====================================================
-        # Chinese
+        # CHINESE
         # ====================================================
 
         if re.search(
@@ -1490,7 +1531,7 @@ def validate_proper_nouns(
             continue
 
         # ====================================================
-        # Malay
+        # MALAY
         # ====================================================
 
         if (
@@ -1880,37 +1921,56 @@ def telegram_api_url(
 
 
 # ============================================================
-# TELEGRAM CAPTION
+# TELEGRAM NEWS FORMAT
 # ============================================================
 
-def build_telegram_caption(
+def build_telegram_news(
     ai_data,
-    source_name,
     source_url
 ):
 
     chinese_title = clean_text(
-        ai_data[
-            "chinese_title"
-        ]
+        ai_data.get(
+            "chinese_title",
+            ""
+        )
     )
 
     chinese_body = clean_text(
-        ai_data[
-            "chinese_body"
-        ]
+        ai_data.get(
+            "chinese_body",
+            ""
+        )
     )
 
-    safe_title = html.escape(
+    malay_title = clean_text(
+        ai_data.get(
+            "malay_title",
+            ""
+        )
+    )
+
+    malay_body = clean_text(
+        ai_data.get(
+            "malay_body",
+            ""
+        )
+    )
+
+    safe_chinese_title = html.escape(
         chinese_title
     )
 
-    safe_body = html.escape(
+    safe_chinese_body = html.escape(
         chinese_body
     )
 
-    safe_source = html.escape(
-        source_name
+    safe_malay_title = html.escape(
+        malay_title
+    )
+
+    safe_malay_body = html.escape(
+        malay_body
     )
 
     safe_url = html.escape(
@@ -1919,17 +1979,87 @@ def build_telegram_caption(
     )
 
     return (
-        "<b>"
-        + safe_title
-        + "</b>\n\n"
-        + safe_body
+        "🇲🇾 <b>MYBuzz NEWS</b>\n\n"
+
+        "🇨🇳 <b>"
+        + safe_chinese_title
+        + "</b>\n"
+        + safe_chinese_body
         + "\n\n"
-        + "<i>Source: "
-        + safe_source
-        + "</i>\n"
-        + '<a href="'
+
+        "🇲🇾 <b>"
+        + safe_malay_title
+        + "</b>\n"
+        + safe_malay_body
+        + "\n\n"
+
+        "👉 <b>点击阅读完整新闻</b>\n"
         + safe_url
-        + '">Read more</a>'
+        + "\n\n"
+
+        "👉 <b>Klik untuk baca berita penuh</b>\n"
+        + safe_url
+    )
+
+
+# ============================================================
+# TELEGRAM PLAIN NEWS FORMAT
+# ============================================================
+
+def build_telegram_plain_text(
+    ai_data,
+    source_url
+):
+
+    chinese_title = clean_text(
+        ai_data.get(
+            "chinese_title",
+            ""
+        )
+    )
+
+    chinese_body = clean_text(
+        ai_data.get(
+            "chinese_body",
+            ""
+        )
+    )
+
+    malay_title = clean_text(
+        ai_data.get(
+            "malay_title",
+            ""
+        )
+    )
+
+    malay_body = clean_text(
+        ai_data.get(
+            "malay_body",
+            ""
+        )
+    )
+
+    return (
+        "🇲🇾 MYBuzz NEWS\n\n"
+
+        "🇨🇳 "
+        + chinese_title
+        + "\n"
+        + chinese_body
+        + "\n\n"
+
+        "🇲🇾 "
+        + malay_title
+        + "\n"
+        + malay_body
+        + "\n\n"
+
+        "👉 点击阅读完整新闻\n"
+        + source_url
+        + "\n\n"
+
+        "👉 Klik untuk baca berita penuh\n"
+        + source_url
     )
 
 
@@ -2052,7 +2182,7 @@ def send_telegram_text(
     except Exception as e:
 
         print(
-            f"ERROR Telegram text failed: "
+            f"ERROR Telegram send failed: "
             f"{e}"
         )
 
@@ -2167,13 +2297,6 @@ def main():
         ""
     )
 
-    source_name = clean_text(
-        article.get(
-            "_source_name",
-            ""
-        )
-    )
-
     source_url = normalize_url(
         article.get(
             "url",
@@ -2181,12 +2304,23 @@ def main():
         )
     )
 
-    caption = (
-        build_telegram_caption(
+    telegram_news = (
+        build_telegram_news(
             ai_data,
-            source_name,
             source_url
         )
+    )
+
+    telegram_plain_text = (
+        build_telegram_plain_text(
+            ai_data,
+            source_url
+        )
+    )
+
+    print(
+        f"Telegram formatted length: "
+        f"{len(telegram_news)}"
     )
 
     # ========================================================
@@ -2195,11 +2329,23 @@ def main():
 
     sent = False
 
-    if image_url:
+    if (
+        image_url
+        and
+        len(telegram_news)
+        <= TELEGRAM_CAPTION_LIMIT
+    ):
 
         sent = send_telegram_photo(
             image_url,
-            caption
+            telegram_news
+        )
+
+    elif image_url:
+
+        print(
+            "Telegram caption too long. "
+            "Using text message instead."
         )
 
     # ========================================================
@@ -2209,47 +2355,11 @@ def main():
     if not sent:
 
         print(
-            "Photo send failed. "
-            "Trying text message..."
-        )
-
-        safe_title = html.escape(
-            ai_data[
-                "chinese_title"
-            ]
-        )
-
-        safe_body = html.escape(
-            ai_data[
-                "chinese_body"
-            ]
-        )
-
-        safe_source = html.escape(
-            source_name
-        )
-
-        safe_url = html.escape(
-            source_url,
-            quote=True
-        )
-
-        text = (
-            "<b>"
-            + safe_title
-            + "</b>\n\n"
-            + safe_body
-            + "\n\n"
-            + "<i>Source: "
-            + safe_source
-            + "</i>\n"
-            + '<a href="'
-            + safe_url
-            + '">Read more</a>'
+            "Sending Telegram text message..."
         )
 
         sent = send_telegram_text(
-            text
+            telegram_plain_text
         )
 
     # ========================================================
@@ -2302,3 +2412,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+````

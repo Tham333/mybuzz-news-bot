@@ -159,7 +159,19 @@
     "Ministry of Investment, Trade and Industry": "投资、贸易及工业部",
     "Ministry of Communications": "通讯部",
     "Ministry of Digital": "数码部",
-    "Ministry of Tourism, Arts and Culture": "旅游、艺术及文化部"
+    "Ministry of Tourism, Arts and Culture": "旅游、艺术及文化部",
+    "Ministry of Rural and Regional Development": "乡区及区域发展部",
+    "Kementerian Kemajuan Desa dan Wilayah": "乡区及区域发展部",
+    "Ministry of Agriculture and Food Security": "农业及粮食安全部",
+    "Kementerian Pertanian dan Keterjaminan Makanan": "农业及粮食安全部",
+    "Ministry of Housing and Local Government": "房屋及地方政府部",
+    "Kementerian Perumahan dan Kerajaan Tempatan": "房屋及地方政府部",
+    "Ministry of Human Resources": "人力资源部",
+    "Ministry of Science, Technology and Innovation": "科学、工艺及革新部",
+    "Ministry of Natural Resources and Environmental Sustainability": "天然资源及环境永续部",
+    "Ministry of Energy Transition and Water Transformation": "能源转型及水务转型部",
+    "Ministry of Youth and Sports": "青年及体育部",
+    "Ministry of Women, Family and Community Development": "妇女、家庭及社会发展部"
   },
 
   "police": {
@@ -172,7 +184,13 @@
     "Traffic Investigation and Enforcement Department": "交通调查及执法部",
     "CID": "刑事调查部",
     "CCID": "商业罪案调查部",
-    "Narcotics CID": "毒品罪案调查部"
+    "Narcotics CID": "毒品罪案调查部",
+    "police headquarters": "警察总部",
+    "district police headquarters": "警区总部",
+    "district police chief": "警区主任",
+    "police chief": "警察局长",
+    "police report": "报案",
+    "police investigation": "警方调查"
   },
 
   "courts": {
@@ -181,7 +199,20 @@
     "High Court": "高等法院",
     "Sessions Court": "地庭",
     "Magistrates' Court": "推事庭",
-    "Syariah Court": "伊斯兰法庭"
+    "Syariah Court": "伊斯兰法庭",
+    "court proceedings": "法庭审讯",
+    "court hearing": "庭审",
+    "witness": "证人",
+    "testified": "供证",
+    "testified in court": "在法庭供证",
+    "charged": "被控",
+    "convicted": "被判罪成",
+    "acquitted": "获判无罪",
+    "sentenced": "被判刑",
+    "remanded": "被延扣",
+    "bail": "保释",
+    "trial": "审讯",
+    "appeal": "上诉"
   },
 
   "political_parties": {
@@ -261,13 +292,25 @@
     "Telekom Malaysia": "Telekom Malaysia",
     "TM": "Telekom Malaysia",
     "Grab": "Grab",
+    "GrabFood": "GrabFood",
+    "Foodpanda": "Foodpanda",
+    "ShopeeFood": "ShopeeFood",
     "Genting": "Genting",
     "99 Speedmart": "99 Speedmart",
     "Mydin": "Mydin",
     "AEON": "AEON",
     "Lotus's": "Lotus's",
     "Watsons": "Watsons",
-    "Guardian": "Guardian"
+    "Guardian": "Guardian",
+    "MR DIY": "MR DIY",
+    "KK Mart": "KK Mart",
+    "FamilyMart": "FamilyMart",
+    "Tealive": "Tealive",
+    "OldTown White Coffee": "OldTown White Coffee",
+    "Secret Recipe": "Secret Recipe",
+    "Village Grocer": "Village Grocer",
+    "Oriental Kopi": "华阳咖啡",
+    "Oriental Coffee": "华阳咖啡"
   },
 
   "celebrities": {
@@ -294,7 +337,16 @@
     "KTM": "马来亚铁道",
     "KTM Komuter": "KTM通勤铁路",
     "KLIA Ekspres": "KLIA Ekspres",
-    "KLIA Transit": "KLIA Transit"
+    "KLIA Transit": "KLIA Transit",
+    "Expressway": "高速公路",
+    "highway": "高速公路",
+    "toll plaza": "收费站",
+    "toll": "过路费",
+    "motorway": "高速公路",
+    "traffic congestion": "交通拥堵",
+    "traffic jam": "交通堵塞",
+    "road closure": "道路关闭",
+    "lane closure": "车道关闭"
   },
 
   "landmarks": {
@@ -318,10 +370,591 @@
     "Bandar Utama": "万达镇",
     "Kota Damansara": "哥打白沙罗",
     "Taman Tun Dr Ismail": "敦依斯迈花园",
-    "Sungai Way": "双溪威"
+    "Sungai Way": "双溪威",
+    "Sri Petaling": "大城堡",
+    "Bukit Bintang": "武吉免登",
+    "Bangsar": "孟沙",
+    "Mont Kiara": "满家乐",
+    "Damansara": "白沙罗",
+    "Setapak": "文良港",
+    "Sentul": "冼都",
+    "Wangsa Maju": "旺沙玛珠",
+    "Ampang": "安邦",
+    "Gombak": "鹅唛"
   },
 
-  "preserve": {
+  "malaysia_local_terms": {
+    "mamak": "嘛嘛档",
+    "mamak stall": "嘛嘛档",
+    "mamak restaurant": "嘛嘛档",
+    "kopitiam": "咖啡店",
+    "hawker centre": "小贩中心",
+    "hawker stall": "小贩摊",
+    "food court": "美食广场",
+    "warung": "马来小食店",
+    "pasar malam": "夜市",
+    "pasar": "巴刹",
+    "wet market": "湿巴刹",
+    "kedai": "店",
+    "kedai makan": "食店",
+    "gerai": "摊位",
+    "kampung": "甘榜",
+    "Jalan": "路",
+    "Taman": "花园",
+    "Kampung": "甘榜",
+    "Bandar": "市镇",
+    "Pekan": "镇",
+    "Daerah": "县",
+    "Mukim": "副县",
+    "balik kampung": "返乡",
+    "open house": "开放门户",
+    "gotong-royong": "社区互助活动",
+    "Hari Kebangsaan": "国庆日",
+    "Hari Malaysia": "马来西亚日",
+    "Merdeka": "独立",
+    "Jalur Gemilang": "马来西亚国旗",
+    "Rukun Negara": "国家原则",
+    "Bumiputera": "土著",
+    "Orang Asli": "原住民",
+    "anak negeri": "土著",
+    "warga emas": "乐龄人士",
+    "golongan muda": "年轻一代",
+    "generasi muda": "年轻一代",
+    "orang ramai": "民众",
+    "penduduk": "居民",
+    "pemandu": "驾驶者",
+    "penunggang motosikal": "摩托车骑士",
+    "peniaga": "商贩",
+    "penjaja": "小贩",
+    "pekerja gig": "零工经济工作者",
+    "rakan penghantar": "送餐伙伴",
+    "rakan pemandu": "司机伙伴"
+  },
+
+  "malaysia_food_terms": {
+    "nasi lemak": "椰浆饭",
+    "roti canai": "印度煎饼",
+    "roti telur": "鸡蛋印度煎饼",
+    "roti bom": "炸弹印度煎饼",
+    "teh tarik": "拉茶",
+    "kopi tarik": "拉咖啡",
+    "kopi o": "咖啡乌",
+    "kopi o kosong": "无糖咖啡乌",
+    "white coffee": "白咖啡",
+    "char kuey teow": "炒粿条",
+    "laksa": "叻沙",
+    "curry laksa": "咖喱叻沙",
+    "assam laksa": "亚参叻沙",
+    "mee goreng": "炒面",
+    "mee rebus": "马来卤面",
+    "mee siam": "米暹",
+    "nasi kandar": "印度煎饭",
+    "ayam percik": "烤鸡",
+    "satay": "沙爹",
+    "rendang": "仁当",
+    "cendol": "煎蕊",
+    "rojak": "罗惹",
+    "pisang goreng": "炸香蕉",
+    "apam balik": "花生煎饼",
+    "kaya toast": "咖椰烤面包",
+    "pandan": "班兰",
+    "gula melaka": "椰糖",
+    "sambal": "叁峇",
+    "belacan": "虾酱",
+    "petai": "臭豆",
+    "durian": "榴梿",
+    "Musang King": "猫山王",
+    "tualang honey": "Tualang野生蜂蜜",
+    "banana leaf rice": "香蕉叶饭",
+    "nasi ayam": "鸡饭",
+    "nasi goreng": "炒饭",
+    "ikan bakar": "烧鱼",
+    "ikan bilis": "江鱼仔",
+    "tau fu fah": "豆腐花",
+    "onde-onde": "椰丝糯米球",
+    "kuih": "糕点",
+    "kuih-muih": "传统糕点",
+    "pulut": "糯米",
+    "lemang": "竹筒饭",
+    "ketupat": "马来粽",
+    "serunding": "肉松",
+    "kaya": "咖椰",
+    "polo bun": "菠萝包",
+    "egg tart": "蛋挞"
+  },
+
+  "economy_and_business": {
+    "gross domestic product": "国内生产总值",
+    "GDP": "国内生产总值",
+    "inflation": "通货膨胀",
+    "inflation rate": "通胀率",
+    "interest rate": "利率",
+    "overnight policy rate": "隔夜政策利率",
+    "OPR": "隔夜政策利率",
+    "cost of living": "生活成本",
+    "cost of living pressures": "生活成本压力",
+    "economic growth": "经济增长",
+    "economic outlook": "经济展望",
+    "investment": "投资",
+    "foreign investment": "外来投资",
+    "foreign direct investment": "外国直接投资",
+    "FDI": "外国直接投资",
+    "domestic investment": "国内投资",
+    "trade": "贸易",
+    "exports": "出口",
+    "imports": "进口",
+    "trade surplus": "贸易顺差",
+    "trade deficit": "贸易逆差",
+    "manufacturing sector": "制造业",
+    "services sector": "服务业",
+    "retail sector": "零售业",
+    "property market": "房地产市场",
+    "property sector": "房地产领域",
+    "small business": "小型企业",
+    "small businesses": "小型企业",
+    "small and medium enterprises": "中小型企业",
+    "SME": "中小企业",
+    "SMEs": "中小企业",
+    "micro enterprise": "微型企业",
+    "micro financing": "微型融资",
+    "gig economy": "零工经济",
+    "digital economy": "数码经济",
+    "job market": "就业市场",
+    "unemployment": "失业率",
+    "wages": "薪资",
+    "salary": "薪金",
+    "minimum wage": "最低薪金",
+    "subsidy": "补贴",
+    "cash aid": "现金援助",
+    "financial assistance": "援助金",
+    "allocation": "拨款",
+    "funding": "资金",
+    "revenue": "营收",
+    "profit": "盈利",
+    "loss": "亏损"
+  },
+
+  "financial_terms": {
+    "loan": "贷款",
+    "bank loan": "银行贷款",
+    "car loan": "汽车贷款",
+    "housing loan": "房屋贷款",
+    "personal loan": "个人贷款",
+    "credit card": "信用卡",
+    "credit card debt": "信用卡债务",
+    "Buy Now Pay Later": "先买后付",
+    "BNPL": "先买后付（BNPL）",
+    "debt": "债务",
+    "debt burden": "债务负担",
+    "financial management": "财务管理",
+    "financial literacy": "金融知识",
+    "bankruptcy": "破产",
+    "bankrupt": "破产",
+    "loan application": "贷款申请",
+    "loan approval": "贷款批准",
+    "loan rejected": "贷款被拒",
+    "deposit": "存款",
+    "withdrawal": "提款",
+    "savings": "储蓄",
+    "interest": "利息",
+    "mortgage": "房贷",
+    "unit trust": "单位信托",
+    "shares": "股票",
+    "stock market": "股市",
+    "Bursa Malaysia": "马来西亚交易所"
+  },
+
+  "weather_and_disasters": {
+    "haze": "烟霾",
+    "jerebu": "烟霾",
+    "air pollution index": "空气污染指数",
+    "API": "空气污染指数（API）",
+    "unhealthy": "不健康",
+    "hazardous": "危险",
+    "very unhealthy": "非常不健康",
+    "flood": "水灾",
+    "flash flood": "突发水灾",
+    "landslide": "土崩",
+    "mudslide": "泥石流",
+    "heavy rain": "豪雨",
+    "torrential rain": "暴雨",
+    "thunderstorm": "雷雨",
+    "strong winds": "强风",
+    "storm": "暴风雨",
+    "monsoon": "季候风",
+    "northeast monsoon": "东北季候风",
+    "southwest monsoon": "西南季候风",
+    "heatwave": "热浪",
+    "drought": "干旱",
+    "forest fire": "森林火灾",
+    "wildfire": "野火",
+    "fire hotspot": "火点",
+    "evacuation": "疏散",
+    "evacuation centre": "疏散中心",
+    "relief centre": "临时疏散中心",
+    "disaster relief": "灾难援助",
+    "water level": "水位",
+    "river level": "河流水位"
+  },
+
+  "crime_and_safety": {
+    "crime": "罪案",
+    "criminal case": "刑事案件",
+    "suspect": "嫌犯",
+    "victim": "受害者",
+    "arrested": "落网",
+    "arrest": "逮捕",
+    "detained": "被扣留",
+    "investigation": "调查",
+    "further investigation": "进一步调查",
+    "police investigation": "警方调查",
+    "raid": "突击行动",
+    "operation": "行动",
+    "seized": "起获",
+    "confiscated": "充公",
+    "stolen": "被盗",
+    "robbery": "抢劫",
+    "burglary": "爆窃",
+    "theft": "盗窃",
+    "scam": "诈骗",
+    "fraud": "欺诈",
+    "online scam": "网络诈骗",
+    "drug trafficking": "贩毒",
+    "drug possession": "持有毒品",
+    "murder": "谋杀",
+    "assault": "袭击",
+    "fatal accident": "致命事故",
+    "died at the scene": "当场死亡",
+    "died after being injured": "受伤后不治",
+    "missing": "失踪",
+    "missing person": "失踪者",
+    "sudden death": "猝死",
+    "body was found": "发现遗体",
+    "post-mortem": "验尸"
+  },
+
+  "transport_news": {
+    "road accident": "交通事故",
+    "traffic accident": "交通事故",
+    "crash": "车祸",
+    "collision": "碰撞",
+    "motorcyclist": "摩托车骑士",
+    "motorist": "驾驶者",
+    "driver": "司机",
+    "passenger": "乘客",
+    "pedestrian": "行人",
+    "lorry": "罗里",
+    "trailer": "拖格罗里",
+    "bus": "巴士",
+    "express bus": "长途巴士",
+    "taxi": "德士",
+    "e-hailing": "电子召车服务",
+    "ride-hailing": "召车服务",
+    "speeding": "超速驾驶",
+    "reckless driving": "鲁莽驾驶",
+    "drink-driving": "酒驾",
+    "roadblock": "路障检查",
+    "road safety": "道路安全",
+    "traffic enforcement": "交通执法"
+  },
+
+  "education": {
+    "school": "学校",
+    "primary school": "小学",
+    "secondary school": "中学",
+    "student": "学生",
+    "college student": "学院生",
+    "university student": "大学生",
+    "teacher": "教师",
+    "lecturer": "讲师",
+    "examination": "考试",
+    "education ministry": "教育部",
+    "public university": "公立大学",
+    "private university": "私立大学",
+    "scholarship": "奖学金",
+    "tuition fees": "学费",
+    "vocational education": "技职教育",
+    "technical education": "技术教育"
+  },
+
+  "health": {
+    "Ministry of Health": "卫生部",
+    "health ministry": "卫生部",
+    "public health": "公共卫生",
+    "healthcare": "医疗保健",
+    "hospital": "医院",
+    "clinic": "诊所",
+    "patient": "患者",
+    "doctor": "医生",
+    "nurse": "护士",
+    "disease": "疾病",
+    "outbreak": "疫情爆发",
+    "cases": "病例",
+    "infection": "感染",
+    "vaccination": "疫苗接种",
+    "vaccine": "疫苗",
+    "obesity": "肥胖",
+    "diabetes": "糖尿病",
+    "health screening": "健康检查",
+    "mental health": "心理健康",
+    "food poisoning": "食物中毒"
+  },
+
+  "government_and_politics": {
+    "Prime Minister": "首相",
+    "Deputy Prime Minister": "副首相",
+    "Minister": "部长",
+    "Deputy Minister": "副部长",
+    "Chief Minister": "首席部长",
+    "Menteri Besar": "州务大臣",
+    "State Executive Councillor": "州行政议员",
+    "Member of Parliament": "国会议员",
+    "MP": "国会议员",
+    "Assemblyman": "州议员",
+    "Federal Government": "联邦政府",
+    "State Government": "州政府",
+    "Cabinet": "内阁",
+    "Parliament": "国会",
+    "state assembly": "州议会",
+    "state seat": "州议席",
+    "parliamentary seat": "国会议席",
+    "election": "选举",
+    "general election": "全国大选",
+    "state election": "州选举",
+    "voter": "选民",
+    "voters": "选民",
+    "constituency": "选区",
+    "redelineation": "选区重划",
+    "electoral boundaries": "选区边界",
+    "political party": "政党",
+    "coalition": "联盟",
+    "reform": "改革",
+    "policy": "政策",
+    "bill": "法案",
+    "amendment": "修正案",
+    "act": "法令",
+    "gazetted": "宪报公布",
+    "effective": "生效"
+  },
+
+  "culture_and_national_events": {
+    "National Day": "国庆日",
+    "Hari Kebangsaan": "国庆日",
+    "Malaysia Day": "马来西亚日",
+    "Hari Malaysia": "马来西亚日",
+    "Merdeka Day": "独立日",
+    "National Day parade": "国庆游行",
+    "National Day celebrations": "国庆庆典",
+    "Merdeka celebrations": "独立庆典",
+    "parade": "游行",
+    "procession": "巡游",
+    "marching contingent": "巡游队伍",
+    "contingent": "队伍",
+    "Jalur Gemilang": "马来西亚国旗",
+    "national flag": "国旗",
+    "fireworks": "烟花",
+    "cultural performance": "文化表演",
+    "traditional dance": "传统舞蹈",
+    "traditional music": "传统音乐",
+    "heritage": "文化遗产",
+    "national heritage": "国家文化遗产",
+    "patriotism": "爱国精神",
+    "unity": "团结",
+    "national unity": "国家团结"
+  },
+
+  "religion_and_festivals": {
+    "Ramadan": "斋戒月",
+    "Ramadan bazaar": "斋戒月市集",
+    "bazaar Ramadan": "斋戒月市集",
+    "Hari Raya Aidilfitri": "开斋节",
+    "Aidilfitri": "开斋节",
+    "Hari Raya Aidiladha": "哈芝节",
+    "Thaipusam": "大宝森节",
+    "Deepavali": "屠妖节",
+    "Chinese New Year": "农历新年",
+    "Lunar New Year": "农历新年",
+    "Christmas": "圣诞节",
+    "Wesak Day": "卫塞节",
+    "Kaamatan": "丰收节",
+    "Gawai Dayak": "达雅丰收节",
+    "open house": "开放门户",
+    "iftar": "开斋",
+    "sahur": "封斋前进食",
+    "mosque": "清真寺",
+    "surau": "祈祷室",
+    "temple": "寺庙",
+    "church": "教堂"
+  },
+
+  "nature_and_animals": {
+    "wild elephant": "野生大象",
+    "elephant": "大象",
+    "orangutan": "红毛猩猩",
+    "tiger": "老虎",
+    "Malayan tiger": "马来亚虎",
+    "tapir": "马来貘",
+    "hornbill": "犀鸟",
+    "crocodile": "鳄鱼",
+    "monitor lizard": "巨蜥",
+    "wildlife": "野生动物",
+    "wildlife department": "野生动物局",
+    "forest reserve": "森林保护区",
+    "national park": "国家公园",
+    "rainforest": "热带雨林",
+    "conservation": "保育",
+    "endangered species": "濒危物种",
+    "protected species": "受保护物种",
+    "habitat": "栖息地",
+    "poaching": "偷猎"
+  },
+
+  "sports": {
+    "football": "足球",
+    "soccer": "足球",
+    "badminton": "羽毛球",
+    "basketball": "篮球",
+    "tennis": "网球",
+    "squash": "壁球",
+    "swimming": "游泳",
+    "athlete": "运动员",
+    "national team": "国家队",
+    "national squad": "国家队",
+    "under-19": "U-19",
+    "under-20": "U-20",
+    "qualifier": "资格赛",
+    "qualification": "晋级资格",
+    "group stage": "小组赛",
+    "knockout stage": "淘汰赛",
+    "semi-final": "半决赛",
+    "final": "决赛",
+    "draw": "战平",
+    "win": "获胜",
+    "defeat": "击败",
+    "lost": "落败",
+    "shared the points": "各取1分",
+    "goalkeeper": "守门员",
+    "goal": "进球",
+    "scored": "取得进球",
+    "match": "比赛",
+    "tournament": "赛事",
+    "championship": "锦标赛"
+  },
+
+  "malay_news_words": {
+    "said": "berkata",
+    "told": "memberitahu",
+    "announced": "mengumumkan",
+    "reported": "melaporkan",
+    "confirmed": "mengesahkan",
+    "revealed": "mendedahkan",
+    "warned": "memberi amaran",
+    "urged": "menggesa",
+    "called for": "menggesa",
+    "approved": "meluluskan",
+    "rejected": "menolak",
+    "launched": "melancarkan",
+    "introduced": "memperkenalkan",
+    "implemented": "melaksanakan",
+    "recorded": "mencatatkan",
+    "increased": "meningkat",
+    "decreased": "menurun",
+    "rose": "meningkat",
+    "fell": "menurun",
+    "remained": "kekal",
+    "maintained": "mengekalkan",
+    "achieved": "mencapai",
+    "reached": "mencapai",
+    "following": "susulan",
+    "amid": "di tengah-tengah",
+    "while": "manakala",
+    "meanwhile": "sementara itu",
+    "also": "turut",
+    "further": "selanjutnya",
+    "expected": "dijangka",
+    "projected": "diunjurkan",
+    "forecast": "diramalkan",
+    "target": "sasaran",
+    "according to": "menurut",
+    "more than": "lebih daripada",
+    "over": "melebihi",
+    "at least": "sekurang-kurangnya",
+    "up to": "sehingga",
+    "nearly": "hampir",
+    "approximately": "kira-kira"
+  },
+
+  "malay_local_terms": {
+    "mamak": "mamak",
+    "mamak stall": "gerai mamak",
+    "mamak restaurant": "restoran mamak",
+    "hawker centre": "pusat penjaja",
+    "hawker stall": "gerai penjaja",
+    "wet market": "pasar basah",
+    "night market": "pasar malam",
+    "food court": "medan selera",
+    "kopitiam": "kopitiam",
+    "kampung": "kampung",
+    "open house": "rumah terbuka",
+    "balik kampung": "balik kampung",
+    "community cleanup": "gotong-royong",
+    "gig economy": "ekonomi gig",
+    "cost of living": "kos sara hidup",
+    "food security": "keterjaminan makanan",
+    "self-sufficiency level": "tahap sara diri",
+    "air pollution index": "Indeks Pencemaran Udara (API)",
+    "haze": "jerebu",
+    "traffic flow": "aliran trafik",
+    "road safety": "keselamatan jalan raya",
+    "micro financing": "pembiayaan mikro",
+    "small business": "perniagaan kecil",
+    "small and medium enterprises": "perusahaan kecil dan sederhana",
+    "SME": "PKS",
+    "government agency": "agensi kerajaan",
+    "state assembly": "Dewan Undangan Negeri",
+    "state seat": "kerusi DUN",
+    "parliamentary seat": "kerusi Parlimen",
+    "district": "daerah",
+    "subdistrict": "mukim",
+    "rural development": "pembangunan luar bandar",
+    "regional development": "pembangunan wilayah",
+    "public safety": "keselamatan awam",
+    "public health": "kesihatan awam",
+    "law enforcement": "penguatkuasaan undang-undang",
+    "road accident": "kemalangan jalan raya",
+    "traffic accident": "kemalangan jalan raya",
+    "car crash": "kemalangan kereta",
+    "motorcycle accident": "kemalangan motosikal",
+    "police investigation": "siasatan polis",
+    "further investigation": "siasatan lanjut",
+    "sudden death": "kematian mengejut",
+    "victim": "mangsa",
+    "suspect": "suspek",
+    "witness": "saksi",
+    "court": "mahkamah",
+    "trial": "perbicaraan",
+    "hearing": "pendengaran",
+    "charged": "didakwa",
+    "arrested": "ditahan",
+    "remanded": "direman",
+    "convicted": "disabitkan kesalahan",
+    "acquitted": "dibebaskan",
+    "sentenced": "dihukum",
+    "died": "meninggal dunia",
+    "injured": "cedera",
+    "missing": "hilang",
+    "evacuated": "dipindahkan",
+    "rescued": "diselamatkan"
+  },
+
+  "brands_and_businesses": {
+    "Oriental Kopi": "华阳咖啡",
+    "Oriental Coffee": "华阳咖啡",
+    "华阳": "KEEP ORIGINAL",
+    "Grab": "Grab",
+    "GrabFood": "GrabFood",
+    "Foodpanda": "Foodpanda",
+    "ShopeeFood": "ShopeeFood",
     "99 Speedmart": "KEEP ORIGINAL",
     "Mydin": "KEEP ORIGINAL",
     "AEON": "KEEP ORIGINAL",
@@ -338,620 +971,287 @@
     "Mid Valley Megamall": "KEEP ORIGINAL"
   },
 
+  "proper_name_rules": {
+    "Oriental Kopi": {
+      "chinese": "华阳咖啡",
+      "malay": "Oriental Kopi",
+      "rule": "中文统一使用“华阳咖啡”或根据语境使用“华阳”，不得翻译成“东方咖啡”。"
+    },
+
+    "mamak": {
+      "chinese": "嘛嘛档",
+      "malay": "mamak",
+      "rule": "马来西亚中文新闻统一优先使用“嘛嘛档”。不要翻译成“印度餐厅”。"
+    },
+
+    "Jalur Gemilang": {
+      "chinese": "马来西亚国旗",
+      "malay": "Jalur Gemilang",
+      "rule": "马来文保留Jalur Gemilang，中文使用马来西亚国旗。"
+    },
+
+    "Hari Kebangsaan": {
+      "chinese": "国庆日",
+      "malay": "Hari Kebangsaan"
+    },
+
+    "Hari Malaysia": {
+      "chinese": "马来西亚日",
+      "malay": "Hari Malaysia"
+    },
+
+    "Orang Asli": {
+      "chinese": "原住民",
+      "malay": "Orang Asli",
+      "rule": "不要机械翻译成“原始人”。"
+    },
+
+    "Bumiputera": {
+      "chinese": "土著",
+      "malay": "Bumiputera",
+      "rule": "涉及政策、经济或人口语境时保留正式含义。"
+    },
+
+    "mamak": {
+      "chinese": "嘛嘛档",
+      "malay": "mamak",
+      "rule": "指马来西亚印度穆斯林经营的餐饮场所时，中文使用“嘛嘛档”。"
+    }
+  },
+
+  "money_rules": {
+    "RM": "令吉",
+    "RM1": "1令吉",
+    "RM10": "10令吉",
+    "RM100": "100令吉",
+    "RM1,000": "1,000令吉",
+    "RM1 million": "100万令吉",
+    "RM1 billion": "10亿令吉",
+    "USD1 million": "100万美元",
+    "US$1 million": "100万美元",
+    "US$1 billion": "10亿美元",
+
+    "conversion_rules": [
+      "1 million = 100万",
+      "10 million = 1,000万",
+      "100 million = 1亿",
+      "1 billion = 10亿",
+      "1.6 billion = 16亿",
+      "8.5 billion = 85亿",
+      "10 billion = 100亿",
+      "85 billion = 850亿",
+      "RM85亿 = RM8.5 billion",
+      "RM8.5 billion = RM85亿",
+      "RM85 billion = RM850亿",
+      "不得把85亿翻译成85 billion",
+      "不得把8.5 billion翻译成850亿"
+    ]
+  },
+
+  "number_rules": {
+    "rules": [
+      "数字必须完全按照来源保留。",
+      "百分比必须保持一致。",
+      "金额必须保持一致。",
+      "日期必须保持一致。",
+      "时间必须保持一致。",
+      "不得自行四舍五入。",
+      "more than = 超过 / melebihi",
+      "at least = 至少 / sekurang-kurangnya",
+      "nearly = 接近 / hampir",
+      "approximately = 约 / kira-kira",
+      "up to = 高达 / sehingga"
+    ]
+  },
+
+  "translation_rules": {
+    "core": [
+      "优先保证事实准确，再追求语言自然。",
+      "不要逐字翻译英文。",
+      "不要保留英文原句结构。",
+      "不要为了自然而增加原文没有的事实。",
+      "不要删除重要数字、地点、人物、日期或来源。",
+      "人物中文名如果词典没有，不得自行创造。",
+      "品牌有官方中文名称时优先使用官方名称。",
+      "品牌没有官方中文名称时保留英文。",
+      "马来西亚本地文化词优先采用马来西亚华文常用表达。",
+      "不确定的专有名词必须先核实，不得猜测。"
+    ],
+
+    "uncertainty": {
+      "alleged": "据称 / 涉嫌",
+      "allegedly": "据称",
+      "suspected": "涉嫌 / 被怀疑",
+      "reportedly": "据报道",
+      "according to police": "警方表示 / 据警方",
+      "witness said": "证人表示",
+      "court heard": "法庭获悉",
+      "claimed": "声称",
+      "denied": "否认",
+      "confirmed": "证实"
+    }
+  },
+
+  "CHINESE_STYLE": {
+    "IDENTITY": "使用自然、简洁、符合马来西亚中文新闻媒体习惯的现代中文。",
+
+    "HEADLINE": [
+      "标题简短。",
+      "标题直接表达新闻重点。",
+      "避免逐字翻译英文标题。",
+      "避免中国大陆新闻腔。",
+      "避免夸张。",
+      "不得加入原文没有的事实。"
+    ],
+
+    "BODY": [
+      "正文保持1至3句。",
+      "第一句直接交代最重要事实。",
+      "句子简洁。",
+      "自然使用马来西亚中文。",
+      "避免机器翻译。",
+      "避免重复。",
+      "不得自行推测。"
+    ],
+
+    "LOCAL_TERMS": [
+      "mamak = 嘛嘛档",
+      "Oriental Kopi = 华阳咖啡",
+      "Jalur Gemilang = 马来西亚国旗",
+      "Hari Kebangsaan = 国庆日",
+      "Hari Malaysia = 马来西亚日",
+      "pasar malam = 夜市",
+      "kopitiam = 咖啡店",
+      "hawker centre = 小贩中心",
+      "kampung = 甘榜",
+      "balik kampung = 返乡",
+      "gotong-royong = 社区互助活动",
+      "Orang Asli = 原住民",
+      "Bumiputera = 土著",
+      "teh tarik = 拉茶",
+      "nasi lemak = 椰浆饭",
+      "char kuey teow = 炒粿条",
+      "roti canai = 印度煎饼",
+      "nasi kandar = 印度煎饭",
+      "cendol = 煎蕊",
+      "sambal = 叁峇"
+    ]
+  },
+
   "MALAY_STYLE": {
     "IDENTITY": "Gunakan Bahasa Melayu Malaysia moden yang natural dan sesuai untuk portal berita Malaysia.",
+
     "TONE": [
       "Profesional tetapi tidak terlalu formal.",
       "Natural seperti penulisan wartawan Malaysia.",
       "Ringkas, padat dan mudah difahami.",
       "Neutral dan berasaskan fakta.",
       "Jangan berbunyi seperti terjemahan mesin.",
-      "Jangan menggunakan bahasa pasar atau slang.",
-      "Jangan terlalu berbunga-bunga.",
-      "Jangan menggunakan gaya Bahasa Melayu Indonesia jika terdapat bentuk Bahasa Melayu Malaysia yang lebih sesuai."
+      "Jangan menggunakan gaya Bahasa Melayu Indonesia.",
+      "Jangan terlalu berbunga-bunga."
     ],
+
     "HEADLINE": [
+      "Tajuk mesti ringkas.",
       "Tajuk mesti terus kepada perkara utama.",
-      "Tajuk berita hendaklah ringkas dan padat.",
-      "Elakkan ayat penuh yang terlalu panjang.",
-      "Utamakan fakta paling penting dalam tajuk.",
-      "Jangan menggunakan tajuk sensasi jika sumber tidak sensasi.",
-      "Jangan menambah fakta yang tidak terdapat dalam sumber.",
-      "Gunakan kata kerja berita yang lazim dalam media Malaysia.",
-      "Gunakan struktur tajuk yang natural untuk pembaca Malaysia."
+      "Gunakan kata kerja berita yang biasa digunakan media Malaysia.",
+      "Elakkan tajuk sensasi.",
+      "Jangan menambah fakta."
     ],
+
     "BODY": [
-      "Gunakan ayat berita yang pendek dan jelas.",
+      "Gunakan ayat pendek.",
       "Letakkan fakta utama pada awal perenggan.",
-      "Jangan mengulang fakta yang sama.",
-      "Gunakan struktur subjek + tindakan + hasil apabila sesuai.",
-      "Elakkan ayat pasif yang terlalu panjang.",
-      "Gunakan peralihan ayat secara natural.",
-      "Jangan menambah konteks yang tidak diberikan oleh sumber.",
-      "Jangan membuat kesimpulan sendiri."
-    ],
-    "NEWS_WORDS": {
-      "expected": "dijangka",
-      "projected": "diunjurkan",
-      "forecast": "diramalkan",
-      "target": "sasaran",
-      "aim": "berhasrat / menyasarkan",
-      "according_to": "menurut",
-      "said": "berkata",
-      "told": "memberitahu",
-      "announced": "mengumumkan",
-      "reported": "melaporkan",
-      "confirmed": "mengesahkan",
-      "revealed": "mendedahkan",
-      "warned": "memberi amaran",
-      "urged": "menggesa",
-      "called_for": "menggesa",
-      "approved": "meluluskan",
-      "rejected": "menolak",
-      "launched": "melancarkan",
-      "introduced": "memperkenalkan",
-      "implemented": "melaksanakan",
-      "recorded": "mencatatkan",
-      "increased": "meningkat",
-      "decreased": "menurun",
-      "rose": "meningkat",
-      "fell": "menurun",
-      "remained": "kekal",
-      "maintained": "mengekalkan",
-      "achieved": "mencapai",
-      "reached": "mencapai",
-      "resulted_in": "mengakibatkan",
-      "following": "susulan",
-      "amid": "di tengah-tengah",
-      "while": "manakala",
-      "meanwhile": "sementara itu",
-      "also": "turut",
-      "further": "selanjutnya"
-    },
-    "MALAY_NEWS_COLLOCATIONS": [
-      "dijangka meningkat",
-      "dijangka menurun",
-      "dijangka kekal",
-      "sebanyak",
-      "mencatatkan peningkatan",
-      "mencatatkan penurunan",
-      "kekal pada",
-      "meningkat kepada",
-      "menurun kepada",
-      "berbanding tempoh sama tahun lalu",
-      "susulan",
-      "menurut",
-      "dalam satu kenyataan",
-      "menerusi kenyataan",
-      "pada masa sama",
-      "selain itu",
-      "turut",
-      "sekali gus",
-      "justeru",
-      "sehubungan itu",
-      "setakat ini",
-      "dalam tempoh",
-      "menjelang",
-      "berkuat kuasa",
-      "akan datang"
-    ],
-    "NUMBERS": [
-      "Gunakan 'sebanyak' untuk jumlah atau peratus apabila sesuai.",
-      "Gunakan 'kira-kira' untuk anggaran.",
-      "Gunakan 'lebih daripada' atau 'melebihi' jika sumber menyatakan more than.",
-      "Gunakan 'hampir' jika sumber menyatakan nearly.",
-      "Gunakan 'sekurang-kurangnya' jika sumber menyatakan at least.",
-      "Gunakan 'sehingga' jika sumber menyatakan up to.",
-      "Jangan mengubah angka asal.",
-      "Jangan membundarkan angka kecuali sumber asal sudah membundarkannya."
-    ],
-    "MONEY": [
-      "Gunakan format RM diikuti jumlah.",
-      "Gunakan ribu, juta atau bilion mengikut nilai sebenar.",
-      "Pastikan penukaran unit daripada bahasa Cina kepada Bahasa Melayu tepat.",
-      "RM85亿 mesti menjadi RM8.5 bilion.",
-      "RM8.5 bilion bersamaan 85亿 dalam bahasa Cina.",
-      "RM85 bilion bersamaan 850亿 dalam bahasa Cina.",
-      "Jangan mengubah nilai wang ketika menterjemah."
-    ],
-    "NATURAL_LANGUAGE": {
-      "santai": [
-        "santai",
-        "bersahaja",
-        "natural",
-        "mesra"
-      ],
-      "menarik_tumpuan": [
-        "menarik perhatian",
-        "mendapat perhatian",
-        "menjadi tumpuan",
-        "menjadi perhatian"
-      ],
-      "menjadi_tarikan_utama": [
-        "menjadi tarikan utama",
-        "menjadi tumpuan utama",
-        "menjadi perhatian utama"
-      ],
-      "significant": [
-        "ketara",
-        "penting",
-        "besar",
-        "bermakna"
-      ],
-      "major": [
-        "utama",
-        "besar",
-        "penting"
-      ],
-      "boost": [
-        "meningkatkan",
-        "merancakkan",
-        "memberi dorongan"
-      ],
-      "slump": [
-        "merosot",
-        "susut",
-        "menurun"
-      ],
-      "surge": [
-        "melonjak",
-        "meningkat mendadak"
-      ]
-    },
-    "AVOID": [
-      "Terjemahan perkataan demi perkataan.",
-      "Struktur ayat Bahasa Inggeris yang diterjemahkan secara langsung.",
-      "Bahasa Melayu Indonesia apabila terdapat istilah Malaysia yang sesuai.",
-      "Bahasa pasar.",
-      "Slanga.",
-      "Ayat terlalu panjang.",
-      "Perkataan terlalu formal sehingga kedengaran kaku.",
-      "Perkataan berbunga-bunga.",
-      "Clickbait.",
-      "Sensasi yang tidak terdapat dalam sumber.",
-      "Fakta tambahan yang tidak terdapat dalam sumber.",
-      "Kesimpulan yang dibuat oleh AI sendiri."
-    ],
-    "CONTEXT_RULES": [
-      "Perkataan yang sama boleh mempunyai terjemahan berbeza mengikut konteks.",
-      "Jangan memaksa satu terjemahan untuk semua konteks.",
-      "Utamakan makna keseluruhan ayat.",
-      "Jika 'santai' digunakan untuk gaya, pakaian, gambar atau ekspresi, gunakan 'bersahaja', 'natural' atau 'mesra' mengikut konteks.",
-      "Jika 'menarik tumpuan' digunakan dalam berita, pilih 'menarik perhatian', 'menjadi tumpuan' atau 'mendapat perhatian' mengikut konteks.",
-      "Jika 'tarikan utama' merujuk kepada acara, tempat atau produk, 'menjadi tarikan utama' boleh digunakan.",
-      "Jangan menggunakan 'menarik tumpuan' berulang kali jika terdapat pilihan yang lebih natural."
+      "Gunakan Bahasa Melayu Malaysia.",
+      "Gunakan istilah tempatan apabila sesuai.",
+      "Elakkan struktur Bahasa Inggeris.",
+      "Elakkan Bahasa Indonesia.",
+      "Jangan mengulang fakta."
     ]
   },
 
-  "CHINESE_STYLE": {
-    "IDENTITY": "使用自然、简洁、符合马来西亚中文新闻媒体习惯的现代中文。",
-    "TONE": [
-      "新闻感强。",
-      "专业但自然。",
-      "简洁、准确、容易阅读。",
-      "避免机器翻译腔。",
-      "避免逐字翻译英文。",
-      "避免过度口语化。",
-      "避免中国大陆新闻媒体特有的生硬表达。",
-      "不得改变新闻事实。"
-    ],
-    "HEADLINE": [
-      "标题直接表达最重要的新闻事实。",
-      "标题简洁有力。",
-      "避免完整翻译英文标题的长句结构。",
-      "避免不必要的形容词。",
-      "避免标题党。",
-      "不要加入原文没有的观点。",
-      "优先使用马来西亚中文媒体常见词汇。"
-    ],
-    "BODY": [
-      "第一句优先交代最重要事实。",
-      "正文保持新闻报道语气。",
-      "句子不要过长。",
-      "避免重复。",
-      "保持原文时间、地点、人物、数字和因果关系。",
-      "不要自行补充背景。",
-      "不要自行推测。",
-      "不要把 expected 翻译成已经发生。"
-    ],
-    "NEWS_WORDS": {
-      "expected": "预计",
-      "projected": "预计",
-      "forecast": "预测",
-      "target": "目标",
-      "according_to": "根据 / 据",
-      "said": "说 / 表示",
-      "announced": "宣布",
-      "reported": "报道",
-      "confirmed": "证实",
-      "revealed": "透露",
-      "warned": "警告",
-      "urged": "促请 / 呼吁",
-      "approved": "批准",
-      "rejected": "拒绝",
-      "launched": "推出",
-      "introduced": "推出 / 引入",
-      "implemented": "落实",
-      "recorded": "录得",
-      "increased": "增加 / 上升",
-      "decreased": "下降 / 减少",
-      "rose": "上涨 / 上升",
-      "fell": "下跌 / 下降",
-      "remained": "维持",
-      "maintained": "维持",
-      "achieved": "达到",
-      "following": "继 / 在……之后",
-      "amid": "在……之际",
-      "while": "与此同时 / 而",
-      "meanwhile": "与此同时",
-      "also": "也 / 同时",
-      "further": "进一步"
-    },
-    "MALAYSIA_CHINESE_TERMS": {
-      "Prime Minister": "首相",
-      "Deputy Prime Minister": "副首相",
-      "Minister": "部长",
-      "Deputy Minister": "副部长",
-      "Chief Minister": "州务大臣 / 首席部长",
-      "State Executive Councillor": "州行政议员",
-      "Member of Parliament": "国会议员",
-      "MP": "国会议员",
-      "Assemblyman": "州议员",
-      "Federal Government": "联邦政府",
-      "State Government": "州政府",
-      "Parliament": "国会",
-      "Cabinet": "内阁",
-      "police": "警方",
-      "court": "法庭",
-      "judge": "法官",
-      "suspect": "嫌犯",
-      "victim": "受害者",
-      "arrested": "落网 / 被捕",
-      "charged": "被控",
-      "remanded": "被延扣",
-      "convicted": "被判罪名成立",
-      "sentenced": "被判刑",
-      "died": "逝世 / 死亡",
-      "injured": "受伤",
-      "missing": "失踪",
-      "flood": "水灾",
-      "flash flood": "突发水灾",
-      "landslide": "土崩",
-      "heavy rain": "豪雨",
-      "storm": "暴风雨"
-    },
-    "NUMBERS": [
-      "数字必须保持准确。",
-      "百分比必须保持准确。",
-      "金额必须保持准确。",
-      "日期必须保持准确。",
-      "不要自行四舍五入。",
-      "中文金额单位转换时必须计算正确。",
-      "RM85亿 = 85亿令吉。",
-      "RM8.5 billion = 85亿令吉。",
-      "RM85 billion = 850亿令吉。",
-      "不得把 RM85亿 错译成 RM85 billion。"
-    ],
-    "AVOID": [
-      "机器翻译。",
-      "逐字翻译。",
-      "过度口语化。",
-      "中国大陆特有新闻腔。",
-      "夸张形容词。",
-      "没有来源的推测。",
-      "没有来源的事实。",
-      "改变原文数字。",
-      "改变原文金额。",
-      "自行创造人物中文名字。"
+  "LOCAL_TERM_ENFORCEMENT": {
+    "RULES": [
+      "如果输入出现词典已有的马来西亚专有名词，必须优先使用词典指定译法。",
+      "不得让模型自由创造已经存在于词典中的中文名称。",
+      "Oriental Kopi必须翻译为“华阳咖啡”，不得写成“东方咖啡”。",
+      "mamak在马来西亚中文新闻中统一优先使用“嘛嘛档”。",
+      "Orang Asli翻译为“原住民”，不得翻译成“原始人”。",
+      "Bumiputera翻译为“土著”。",
+      "Jalur Gemilang中文使用“马来西亚国旗”。",
+      "Hari Kebangsaan中文使用“国庆日”。",
+      "Hari Malaysia中文使用“马来西亚日”。",
+      "马来西亚食物优先使用本地华文常用名称。",
+      "品牌没有官方中文名称时保留英文。",
+      "人物没有词典中文名时不要自行创造中文名字。",
+      "地点没有词典名称时不要随意音译。",
+      "遇到不确定的本地词语、品牌、人物、地点或机构，应先查询可靠来源再翻译。"
     ]
   },
 
-  "TRANSLATION_RULES": {
-    "CORE": [
-      "专有名词优先使用本词典。",
-      "如果词典没有人物中文名字，不得自行创造中文名字。",
-      "人物姓名可以保留英文原名。",
-      "公司品牌如果标记 KEEP ORIGINAL，必须保留原文。",
-      "不要因为翻译风格而改变事实。",
-      "不要添加来源没有提供的信息。",
-      "不要删除影响新闻事实的重要信息。"
+  "ANTI_MACHINE_TRANSLATION": {
+    "RULE": "最终结果必须像马来西亚新闻网站原生写出来的文章，而不是英文翻译。",
+
+    "CHECK": [
+      "句子读起来是否像马来西亚新闻？",
+      "是否避免英文句型？",
+      "是否避免逐字翻译？",
+      "是否使用正确的马来西亚本地词？",
+      "是否保持人物、地点、日期和数字准确？",
+      "是否把预测翻译成了预测，而不是已经发生？",
+      "是否把涉嫌、据称、证人说法等保持为非确定事实？",
+      "是否避免自行加入背景或结论？"
     ],
-    "FACT_ACCURACY": [
-      "数字必须保持实际数值完全一致。",
-      "百分比必须保持一致。",
-      "日期必须保持一致。",
-      "时间必须保持一致。",
-      "金额必须保持实际价值一致。",
-      "地点必须保持一致。",
-      "人物必须保持一致。",
-      "因果关系必须保持一致。",
-      "expected、projected、likely 等预测性表达不能翻译成已经发生。",
-      "alleged、suspected 等未经证实的内容不能翻译成确定事实。"
+
+    "BAD_EXAMPLES": [
+      "在塞尔曼，9月2日，",
+      "军装被视为连接年轻人和过去斗争的桥梁。",
+      "把mamak翻译成印度餐厅。",
+      "把Oriental Kopi翻译成东方咖啡。",
+      "把85亿翻译成85 billion。",
+      "把reported翻译成证实。",
+      "把alleged翻译成已经证实。"
     ],
-    "MONEY_CONVERSION": [
-      "中文的亿、万、千万、百万等单位转换成英文或马来文时必须准确计算。",
-      "85亿 = 8.5 billion。",
-      "8.5 billion = 85亿。",
-      "85 billion = 850亿。",
-      "RM85亿 = RM8.5 bilion。",
-      "RM8.5 bilion = RM85亿。",
-      "RM85 bilion = RM850亿。",
-      "禁止把中文'85亿'直接写成英文或马来文的'85 billion'。"
-    ],
-    "STYLE": [
-      "新闻语言优先于字面翻译。",
-      "自然表达优先于逐字对应。",
-      "准确性优先于语言修饰。",
-      "如果自然表达与原文事实发生冲突，必须优先保留事实。",
-      "不得为了让句子更好听而增加事实。",
-      "不得为了符合新闻风格而改变原文语气。"
+
+    "GOOD_EXAMPLES": [
+      "（芙蓉2日讯）",
+      "军装成为年轻一代认识国家历史的媒介。",
+      "马来西亚嘛嘛档",
+      "华阳咖啡",
+      "85亿令吉",
+      "据报道",
+      "据称",
+      "警方表示",
+      "证人供证称"
     ]
   },
 
   "NEWS_STRUCTURE": {
-    "CORE": {
-      "PURPOSE": "Translate and rewrite the source into natural Malaysian news writing. Do not translate sentence-by-sentence. Preserve every fact, number, name, location, date, attribution and uncertainty from the source.",
-      "PRIORITY": [
-        "FACTUAL_ACCURACY",
-        "TRANSLATION_RULES",
-        "PROPER_NOUNS",
-        "NEWS_STRUCTURE",
-        "LANGUAGE_STYLE",
-        "NATURAL_EXPRESSION"
-      ],
-      "RULE": "The output should read like a Malaysian news portal article originally written in the target language, not like a translated English article."
-    },
-
-    "CHINESE_NEWS": {
-      "IDENTITY": "Write in natural Malaysian Chinese news style.",
-      "LOCATION_DATE": {
-        "PREFERRED": [
-          "（地点2日讯）",
-          "（地点2日）"
-        ],
-        "ALTERNATIVE": [
-          "在地点，2日，"
-        ],
-        "RULE": "Do not mechanically translate English datelines such as 'In Seremban, 2 September' into '在塞尔曼，9月2日'. Restructure the sentence naturally."
-      },
-      "DATELINE": {
-        "RULE": "When the source clearly provides a location and date, Malaysian Chinese news style may use a dateline such as '（芙蓉2日讯）'. Do not invent '日讯' if the source does not support a news dateline context.",
-        "LOCATION_TRANSLATION": "Use the proper noun dictionary for Malaysian places. Use established Malaysian Chinese place names where available.",
-        "DATE_FORMAT": [
-          "2日讯",
-          "2日"
-        ]
-      },
-      "HEADLINE": {
-        "STYLE": "Short, direct, factual and natural.",
-        "RULES": [
-          "Do not translate the English headline word-for-word.",
-          "Remove unnecessary English-style sentence structure.",
-          "Prefer concise Malaysian Chinese news headlines.",
-          "Do not exaggerate or create clickbait.",
-          "Do not add facts that are not in the source."
-        ]
-      },
-      "BODY": {
-        "STYLE": "Use short, clear and natural Malaysian Chinese news sentences.",
-        "RULES": [
-          "Put the main fact early in the sentence.",
-          "Avoid long English-style clauses.",
-          "Avoid repeatedly using '被视为', '作为', '旨在' when a more natural expression is available.",
-          "Avoid unnatural literal structures such as '连接年轻人和过去的斗争'.",
-          "Prefer natural expressions such as '让年轻一代认识', '帮助年轻一代了解', '成为年轻一代认识……的媒介', depending on context.",
-          "Do not add interpretation that is absent from the source."
-        ]
-      },
-      "NEWS_RESTRUCTURING": {
-        "RULE": "Sentence structure may be changed substantially when necessary to produce natural Malaysian Chinese, as long as the factual meaning remains unchanged.",
-        "EXAMPLES": [
-          {
-            "SOURCE": "Military uniforms are seen as a bridge connecting young people with the country's history of struggle and sacrifice.",
-            "BAD": "军装被视为连接年轻人和国家过去斗争与牺牲的桥梁。",
-            "GOOD": "军装成为年轻一代认识国家历史、了解先辈奋斗与牺牲的媒介。"
-          },
-          {
-            "SOURCE": "The uniforms help young people understand the country's history.",
-            "BAD": "制服帮助年轻人了解国家的历史。",
-            "GOOD": "军装让年轻一代进一步认识国家历史。"
-          },
-          {
-            "SOURCE": "The event aims to introduce young people to the country's history.",
-            "BAD": "该活动旨在把年轻人介绍给国家历史。",
-            "GOOD": "活动旨在让年轻一代认识国家历史。"
-          }
-        ]
-      },
-      "PREFERRED_PATTERNS": {
-        "help_young_people_understand": [
-          "让年轻一代了解",
-          "帮助年轻一代认识",
-          "让年轻人进一步了解",
-          "让年轻一代更深入认识"
-        ],
-        "connect_with_history": [
-          "认识国家历史",
-          "了解国家历史",
-          "进一步认识国家的历史与发展",
-          "了解先辈的奋斗与牺牲"
-        ],
-        "bridge": [
-          "成为……的媒介",
-          "成为……的纽带",
-          "拉近……与……的距离"
-        ],
-        "RULE": "Do not automatically translate 'bridge' as '桥梁'. Select the most natural expression according to context."
-      },
-      "AVOID": [
-        "在塞尔曼，9月2日，",
-        "军装被视为连接年轻人和过去斗争的桥梁",
-        "通过……来……",
-        "对于……而言……",
-        "据……所指出的是……",
-        "机械翻译英文句子结构",
-        "中国大陆新闻中过度正式或生硬的表达"
+    "MYBUZZ_FORMAT": {
+      "header": "🇲🇾 MYBuzz NEWS",
+      "chinese": "🇨🇳 中文标题\n中文简短摘要",
+      "malay": "🇲🇾 Malay headline\nMalay short summary",
+      "links": [
+        "👉 点击阅读完整新闻",
+        "SOURCE_URL",
+        "👉 Klik untuk baca berita penuh",
+        "SOURCE_URL"
       ]
     },
 
-    "MALAY_NEWS": {
-      "IDENTITY": "Write in natural modern Malaysian Malay news portal style.",
-      "LOCATION_DATE": {
-        "PREFERRED": [
-          "SEREMBAN, 2 Sept —",
-          "KUALA LUMPUR, 2 Sept —"
-        ],
-        "ALTERNATIVE": [
-          "Di Seremban, ...",
-          "Pada 2 September, ..."
-        ],
-        "RULE": "Do not mechanically translate an English sentence beginning with 'In Seremban, 2 September'. Restructure it into Malaysian news style."
-      },
-      "DATELINE": {
-        "RULE": "For a news-style article, a location/date dateline such as 'SEREMBAN, 2 Sept —' may be used when appropriate.",
-        "MONTH_FORMAT": [
-          "Jan",
-          "Feb",
-          "Mac",
-          "Apr",
-          "Mei",
-          "Jun",
-          "Jul",
-          "Ogos",
-          "Sept",
-          "Okt",
-          "Nov",
-          "Dis"
-        ]
-      },
-      "HEADLINE": {
-        "STYLE": "Short, direct, factual and natural Malaysian Malay.",
-        "RULES": [
-          "Do not translate English headlines word-for-word.",
-          "Use natural Malaysian news vocabulary.",
-          "Avoid Indonesian-style wording.",
-          "Avoid clickbait unless the source itself is clearly sensational.",
-          "Do not add facts."
-        ]
-      },
-      "BODY": {
-        "STYLE": "Natural Malaysian Malay used by mainstream Malaysian news portals.",
-        "RULES": [
-          "Use short and readable sentences.",
-          "Put the main fact early.",
-          "Use active voice when natural.",
-          "Use passive voice when it is standard Malaysian news style.",
-          "Avoid direct English sentence structures.",
-          "Avoid unnatural literal translations.",
-          "Avoid excessive formal or bureaucratic wording.",
-          "Do not add unsupported context."
-        ]
-      },
-      "NEWS_RESTRUCTURING": {
-        "RULE": "Malay sentence structure may be reorganised instead of following the English source sentence order.",
-        "EXAMPLES": [
-          {
-            "SOURCE": "Military uniforms are seen as a bridge connecting young people with the country's history of struggle and sacrifice.",
-            "BAD": "Minat terhadap seragam tentera dijadikan jambatan untuk menghubungkan generasi muda dengan sejarah perjuangan dan pengorbanan negara.",
-            "GOOD": "Seragam tentera menjadi medium untuk mendekatkan generasi muda dengan sejarah perjuangan dan pengorbanan negara."
-          },
-          {
-            "SOURCE": "The uniforms help young people understand the country's history.",
-            "BAD": "Seragam itu membantu orang muda untuk memahami sejarah negara.",
-            "GOOD": "Seragam berkenaan membantu generasi muda mengenali sejarah negara."
-          },
-          {
-            "SOURCE": "The event aims to introduce young people to the country's history.",
-            "BAD": "Acara itu bertujuan untuk memperkenalkan orang muda kepada sejarah negara.",
-            "GOOD": "Acara itu bertujuan memberi peluang kepada generasi muda untuk mengenali sejarah negara."
-          }
-        ]
-      },
-      "PREFERRED_PATTERNS": {
-        "help_young_people_understand": [
-          "membantu generasi muda mengenali",
-          "membolehkan generasi muda memahami",
-          "mendekatkan generasi muda dengan",
-          "memberi peluang kepada generasi muda untuk mengenali"
-        ],
-        "connect_with_history": [
-          "mendekatkan generasi muda dengan sejarah",
-          "membantu generasi muda mengenali sejarah",
-          "memupuk pemahaman generasi muda terhadap sejarah"
-        ],
-        "bridge": [
-          "menjadi medium",
-          "menjadi wadah",
-          "menjadi penghubung",
-          "mendekatkan"
-        ],
-        "RULE": "Do not automatically translate 'bridge' as 'jambatan'. Choose the most natural Malaysian Malay expression according to context."
-      },
-      "NEWS_COLLOCATIONS": {
-        "natural": [
-          "menjadi medium untuk",
-          "membantu generasi muda mengenali",
-          "mendekatkan generasi muda dengan",
-          "memupuk minat terhadap",
-          "memberi peluang kepada",
-          "meningkatkan kesedaran mengenai",
-          "menurut",
-          "berkata",
-          "mengumumkan",
-          "mengesahkan",
-          "mendedahkan",
-          "memberi amaran",
-          "menggesa"
-        ]
-      },
-      "AVOID": [
-        "minat seragam tentera dijadikan jambatan",
-        "dijadikan jambatan untuk menghubungkan",
-        "Di Seremban, 2 September,",
-        "terlalu banyak perkataan 'untuk'",
-        "struktur ayat bahasa Inggeris",
-        "gaya Bahasa Indonesia",
-        "ayat terjemahan mesin"
-      ]
-    },
-
-    "HEADLINE_RULES": {
-      "CORE": [
-        "The headline must be understandable without reading the body.",
-        "Keep the headline concise.",
-        "Preserve the main news angle.",
-        "Do not introduce information not present in the source.",
-        "Do not turn a neutral source into a sensational headline."
-      ],
-      "CHINESE": {
-        "STYLE": "Malaysian Chinese news headline.",
-        "PREFERRED": [
-          "军装助年轻一代认识国家历史",
-          "军装成为年轻一代了解国家历史的媒介",
-          "军装拉近年轻一代与国家历史的距离"
-        ]
-      },
-      "MALAY": {
-        "STYLE": "Malaysian Malay news headline.",
-        "PREFERRED": [
-          "Seragam tentera dekatkan generasi muda dengan sejarah negara",
-          "Seragam tentera bantu generasi muda kenali sejarah negara",
-          "Seragam tentera jadi medium kenali sejarah negara"
-        ]
-      }
-    },
-
-    "ANTI_MACHINE_TRANSLATION": {
-      "RULE": "Never preserve an unnatural source-language structure merely because it is grammatically possible in the target language.",
-      "CHECK_BEFORE_FINAL": [
-        "Does the sentence sound like Malaysian news written by a Malaysian journalist?",
-        "Would a Malaysian reader naturally say it this way?",
-        "Is the location/date placement natural?",
-        "Are English sentence structures removed?",
-        "Are unnecessary literal translations removed?",
-        "Are bridge, facilitate, leverage, highlight, underscore and similar abstract English words translated according to context?",
-        "Are all facts, numbers and names still unchanged?"
-      ]
-    }
+    "RULES": [
+      "中文摘要通常1至2句。",
+      "马来文摘要通常1至2句。",
+      "保持简短。",
+      "只保留新闻最重要的信息。",
+      "不要加入Source / Sumber。",
+      "不要加入多余解释。",
+      "不要使用粗体。",
+      "两个语言版本必须分别独立。",
+      "两个CTA必须分别显示完整原始URL。",
+      "SOURCE_URL必须使用用户提供的原始URL。",
+      "不要修改URL。",
+      "不要把URL转换成其他格式。"
+    ]
   }
 }

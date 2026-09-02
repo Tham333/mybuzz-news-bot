@@ -964,22 +964,20 @@ Return ONLY the JSON object.
 """
 
             response = client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a highly accurate Malaysian news editor "
-                            "and translation system. Return ONLY valid JSON."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": current_prompt
-                    }
-                ],
-                temperature=0.1,
-            )
+    model=GROQ_MODEL,
+    messages=[
+        {
+            "role": "system",
+            "content": "You are a highly accurate Malaysian news editor and translation system. Return ONLY valid JSON."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ],
+    temperature=0.1,
+    max_tokens=800,
+)
 
             output = (
                 response.choices[0].message.content or ""

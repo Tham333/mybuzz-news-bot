@@ -29,6 +29,7 @@ MAX_GNEWS_ARTICLES = 10
 MAX_POSTED = 1000
 MAX_GNEWS_BATCHES = 5
 
+
 # ============================================================
 # GROQ CONFIG
 # ============================================================
@@ -476,55 +477,82 @@ def fetch_gnews():
         f"{GNEWS_BASE_URL}/search"
     )
 
-    params = {
-        "q": "Malaysia",
-        "lang": "en",
-        "country": "my",
-        "max": MAX_GNEWS_ARTICLES,
-        "apikey": GNEWS_API_KEY
-    }
+    all_articles = []
 
-    try:
+    for batch in range(
+        1,
+        MAX_GNEWS_BATCHES + 1
+    ):
 
-        response = requests.get(
-            url,
-            params=params,
-            timeout=REQUEST_TIMEOUT
-        )
+        params = {
+            "q": "Malaysia",
+            "lang": "en",
+            "country": "my",
+            "max": MAX_GNEWS_ARTICLES,
+            "page": batch,
+            "apikey": GNEWS_API_KEY
+        }
 
-        print(
-            f"GNews HTTP {response.status_code}"
-        )
+        try:
 
-        response.raise_for_status()
+            response = requests.get(
+                url,
+                params=params,
+                timeout=REQUEST_TIMEOUT
+            )
 
-        data = response.json()
+            print(
+                f"GNews batch {batch} HTTP "
+                f"{response.status_code}"
+            )
 
-        articles = data.get(
-            "articles",
-            []
-        )
+            response.raise_for_status()
 
-        if not isinstance(
-            articles,
-            list
-        ):
+            data = response.json()
 
-            return []
+            articles = data.get(
+                "articles",
+                []
+            )
 
-        print(
-            f"GNews returned {len(articles)} articles"
-        )
+            if not isinstance(
+                articles,
+                list
+            ):
 
-        return articles
+                print(
+                    f"GNews batch {batch} returned invalid data."
+                )
 
-    except Exception as e:
+                continue
 
-        print(
-            f"ERROR GNews request failed: {e}"
-        )
+            print(
+                f"GNews batch {batch} returned "
+                f"{len(articles)} articles"
+            )
 
-        return []
+            if not articles:
+
+                break
+
+            all_articles.extend(
+                articles
+            )
+
+        except Exception as e:
+
+            print(
+                f"ERROR GNews batch {batch} failed: {e}"
+            )
+
+            break
+
+    print(
+        f"GNews total articles collected: "
+        f"{len(all_articles)}"
+    )
+
+    return all_articles
 
 
 # ============================================================
@@ -626,33 +654,18 @@ def select_news(
         posted
     )
 
-    for article in articles:
+    for index, article in enumerate(
+        articles,
+        start=1
+    ):
 
         aid = article_id(
             article
         )
 
-        if aid in posted_set:
-
-            continue
-
         title = clean_text(
             article.get(
                 "title",
-                ""
-            )
-        )
-
-        description = clean_text(
-            article.get(
-                "description",
-                ""
-            )
-        )
-
-        content = clean_text(
-            article.get(
-                "content",
                 ""
             )
         )
@@ -663,6 +676,78 @@ def select_news(
                 ""
             )
         )
+
+        print(
+            f"Checking article {index}: "
+            f"{title}"
+        )
+
+        # ====================================================
+        # ALREADY POSTED
+        # ====================================================
+
+        if aid in posted_set:
+
+            print(
+                "  SKIP: Already posted."
+            )
+
+            continue
+
+        # ====================================================
+        # NO TITLE
+        # ====================================================
+
+        if not title:
+
+            print(
+                "  SKIP: Missing title."
+            )
+
+            continue
+
+        # ====================================================
+        # NO URL
+        # ====================================================
+
+        if not url:
+
+            print(
+                "  SKIP: Missing URL."
+            )
+
+            continue
+
+        # ====================================================
+        # IMAGE
+        # ====================================================
+
+        image = (
+            article.get(
+                "image",
+                ""
+            )
+            or
+            get_article_image(
+                url
+            )
+        )
+
+        if not image:
+
+            print(
+                "  SKIP: No image."
+            )
+
+            continue
+
+        # ====================================================
+        # SELECTED
+        # ====================================================
+
+        article["_id"] = aid
+
+        article["_image"] = image
 
         source = (
             article.get(
@@ -679,57 +764,22 @@ def select_news(
 
             source = {}
 
-        source_name = clean_text(
+        article["_source_name"] = clean_text(
             source.get(
                 "name",
                 ""
             )
         )
 
-        if not title:
-
-            continue
-
-        if not url:
-
-            continue
-
-        # Prefer GNews image.
-        image = (
-            article.get(
-                "image",
-                ""
-            )
-            or
-            get_article_image(
-                url
-            )
-        )
-
-        if not image:
-
-            print(
-                f"Skipping without image: {title}"
-            )
-
-            continue
-
-        article["_id"] = aid
-
-        article["_image"] = image
-
-        article["_source_name"] = (
-            source_name
-        )
-
         print(
-            f"Selected title: {title}"
+            f"SELECTED title: {title}"
         )
 
         return article
 
     print(
-        "No suitable new article found."
+        "No suitable new article found "
+        "after checking all articles."
     )
 
     return None
@@ -2177,8 +2227,9 @@ def validate_proper_nouns(
             False
         ):
 
-            # Must remain in output somewhere.
-            source_lower = source.lower()
+            source_lower = (
+                source.lower()
+            )
 
             if (
                 source_lower
@@ -2206,12 +2257,32 @@ def validate_proper_nouns(
             target
         ):
 
-            # If source appears in Chinese output,
-            # it was not translated.
-            if (
+            source_lower = (
                 source.lower()
-                in chinese_text_lower
-            ):
+            )
+
+            target_lower = (
+                target.lower()
+            )
+
+            # =================================================
+            # IMPORTANT:
+            # Correct Chinese translation already exists.
+            # Do NOT reject just because the English source
+            # also appears somewhere in the Chinese output.
+            # =================================================
+
+            if target_lower in chinese_text_lower:
+
+                continue
+
+            # =================================================
+            # If English source remains and the correct
+            # Chinese translation is completely missing,
+            # reject it.
+            # =================================================
+
+            if source_lower in chinese_text_lower:
 
                 print(
                     "Chinese proper noun not translated: "
@@ -2226,8 +2297,6 @@ def validate_proper_nouns(
         # MALAY TARGET
         # ====================================================
 
-        # For terms that intentionally remain original,
-        # skip validation.
         if (
             target.lower()
             == source.lower()
@@ -2235,7 +2304,6 @@ def validate_proper_nouns(
 
             continue
 
-        # Only enforce if source should be replaced.
         if (
             source.lower()
             in malay_text_lower

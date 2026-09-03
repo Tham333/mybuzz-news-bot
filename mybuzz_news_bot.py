@@ -12,9 +12,7 @@ from openai import OpenAI
 # ============================================================
 
 GNEWS_BASE_URL = "https://gnews.io/api/v4"
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-
-GROQ_MODEL = "openai/gpt-oss-20b"
+OPENAI_MODEL = "gpt-5.6-luna"
 
 REQUEST_TIMEOUT = 20
 

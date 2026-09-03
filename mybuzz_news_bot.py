@@ -7,11 +7,13 @@ import requests
 from bs4 import BeautifulSoup
 from openai import OpenAI
 
+
 # ============================================================
 # CONFIG
 # ============================================================
 
 GNEWS_BASE_URL = "https://gnews.io/api/v4"
+
 OPENAI_MODEL = "gpt-5.6-luna"
 
 REQUEST_TIMEOUT = 20
@@ -19,8 +21,9 @@ REQUEST_TIMEOUT = 20
 MAX_GNEWS_ARTICLES = 10
 MAX_POSTED = 1000
 
+
 # ============================================================
-# GROQ CONFIG
+# OPENAI CONFIG
 # ============================================================
 
 MAX_AI_ATTEMPTS = 1
@@ -28,6 +31,7 @@ MAX_AI_ATTEMPTS = 1
 AI_MAX_COMPLETION_TOKENS = 1200
 
 AI_REASONING_EFFORT = "low"
+
 
 # ============================================================
 # PROMPT LIMITS
@@ -42,12 +46,14 @@ MAX_NEWS_STRUCTURE_CHARS = 900
 MAX_MALAY_STYLE_CHARS = 1100
 MAX_CHINESE_STYLE_CHARS = 1100
 
+
 # ============================================================
 # TELEGRAM LIMITS
 # ============================================================
 
 TELEGRAM_CAPTION_LIMIT = 1000
 TELEGRAM_TEXT_LIMIT = 4000
+
 
 # ============================================================
 # FILES
@@ -70,8 +76,9 @@ STATE_FILE = os.path.join(
     "bot_state.json"
 )
 
+
 # ============================================================
-# ENV
+# ENVIRONMENT VARIABLES
 # ============================================================
 
 GNEWS_API_KEY = os.getenv(
@@ -94,8 +101,9 @@ TELEGRAM_CHAT_ID = os.getenv(
     ""
 ).strip()
 
+
 # ============================================================
-# GROQ CLIENT
+# OPENAI CLIENT
 # ============================================================
 
 openai_client = None
@@ -106,6 +114,8 @@ if OPENAI_API_KEY:
         api_key=OPENAI_API_KEY,
         max_retries=0
     )
+
+
 # ============================================================
 # BASIC HELPERS
 # ============================================================
@@ -135,6 +145,7 @@ def clean_text(text):
 
     return text.strip()
 
+
 def limit_text(
     text,
     max_chars
@@ -153,14 +164,17 @@ def limit_text(
         + "..."
     )
 
+
 def normalize_url(url):
 
     if not url:
+
         return ""
 
     url = url.strip()
 
     return url.split("#")[0]
+
 
 def article_id(article):
 
@@ -200,6 +214,7 @@ def article_id(article):
             "utf-8"
         )
     ).hexdigest()
+
 
 # ============================================================
 # POSTED DATABASE
@@ -250,6 +265,7 @@ def load_posted():
 
     return []
 
+
 def save_posted(posted):
 
     posted = posted[
@@ -276,6 +292,7 @@ def save_posted(posted):
         print(
             f"ERROR saving posted.json: {e}"
         )
+
 
 # ============================================================
 # STATE
@@ -320,6 +337,7 @@ def load_state():
         "run_count": 0
     }
 
+
 def save_state(state):
 
     try:
@@ -343,6 +361,7 @@ def save_state(state):
             f"WARNING failed to save bot_state.json: {e}"
         )
 
+
 def increase_run_counter():
 
     state = load_state()
@@ -362,6 +381,7 @@ def increase_run_counter():
         "run_count"
     ]
 
+
 # ============================================================
 # CONFIG CHECK
 # ============================================================
@@ -376,7 +396,7 @@ def check_config():
             "GNEWS_API_KEY"
         )
 
-       if not OPENAI_API_KEY:
+    if not OPENAI_API_KEY:
 
         missing.append(
             "OPENAI_API_KEY"
@@ -414,6 +434,7 @@ def check_config():
         return False
 
     return True
+
 
 # ============================================================
 # GNEWS
@@ -469,6 +490,7 @@ def fetch_gnews():
         )
 
         return []
+
 
 # ============================================================
 # ARTICLE IMAGE
@@ -552,6 +574,7 @@ def get_article_image(url):
         )
 
     return ""
+
 
 # ============================================================
 # SELECT NEWS
@@ -667,6 +690,7 @@ def select_news(
 
     return None
 
+
 # ============================================================
 # LOAD TERMS
 # ============================================================
@@ -704,6 +728,7 @@ def load_terms():
 
         return {}
 
+
 # ============================================================
 # TERM CATEGORIES
 # ============================================================
@@ -714,6 +739,7 @@ NON_TERM_CATEGORIES = {
     "TRANSLATION_RULES",
     "NEWS_STRUCTURE"
 }
+
 
 # ============================================================
 # FLATTEN TERMS
@@ -750,6 +776,7 @@ def flatten_terms(data):
                 })
 
     return result
+
 
 # ============================================================
 # FIND RELEVANT TERMS
@@ -823,6 +850,7 @@ def find_relevant_terms(
 
     return matches
 
+
 # ============================================================
 # BUILD TERMS TEXT
 # ============================================================
@@ -849,6 +877,7 @@ def build_terms_text(
     return "\n".join(
         lines
     )
+
 
 # ============================================================
 # VERBOSE RULE KEYS
@@ -889,6 +918,7 @@ VERBOSE_RULE_KEYS = {
     "reference",
     "REFERENCE"
 }
+
 
 # ============================================================
 # COMPACT RULE VALUE
@@ -995,6 +1025,7 @@ def compact_rule_value(
 
     return value
 
+
 # ============================================================
 # BUILD RULE TEXT
 # ============================================================
@@ -1044,6 +1075,7 @@ def build_rule_text(
         text[:max_chars]
         + "..."
     )
+
 
 # ============================================================
 # SOURCE ARTICLE
@@ -1100,11 +1132,12 @@ def build_source_article(
         f"URL: {url}"
     )
 
+
 # ============================================================
-# GROQ PROMPT
+# OPENAI PROMPT
 # ============================================================
 
-def build_groq_prompt(
+def build_openai_prompt(
     article,
     relevant_terms,
     terms_data
@@ -1247,6 +1280,7 @@ OUTPUT RULES:
 
     return prompt.strip()
 
+
 # ============================================================
 # JSON EXTRACTION
 # ============================================================
@@ -1320,6 +1354,7 @@ def extract_json(
 
         return None
 
+
 # ============================================================
 # VALIDATE AI FIELDS
 # ============================================================
@@ -1380,6 +1415,7 @@ def validate_ai_fields(
             return False
 
     return True
+
 
 # ============================================================
 # PROPER NOUN VALIDATION
@@ -1515,6 +1551,7 @@ def validate_proper_nouns(
 
     return True
 
+
 # ============================================================
 # RATE LIMIT
 # ============================================================
@@ -1539,6 +1576,7 @@ def is_rate_limit_error(
         "too many requests" in text
     )
 
+
 def is_prompt_too_large(
     error_text
 ):
@@ -1559,6 +1597,7 @@ def is_prompt_too_large(
         "context length" in text
     )
 
+
 # ============================================================
 # AI GENERATION
 # ============================================================
@@ -1573,12 +1612,6 @@ def generate_ai_content(
         print(
             "ERROR OpenAI client not initialized."
         )
-
-        return None
-    
-       print(
-    "ERROR OpenAI client not initialized."
-)
 
         return None
 
@@ -1646,19 +1679,19 @@ def generate_ai_content(
     # BUILD PROMPT
     # ========================================================
 
-    prompt = build_groq_prompt(
+    prompt = build_openai_prompt(
         article,
         relevant_terms,
         terms_data
     )
 
     print(
-        f"Groq prompt size: "
+        f"OpenAI prompt size: "
         f"{len(prompt)} characters"
     )
 
     # ========================================================
-    # GROQ
+    # OPENAI
     # ========================================================
 
     for attempt in range(
@@ -1667,7 +1700,7 @@ def generate_ai_content(
     ):
 
         print(
-            f"Sending Groq request "
+            f"Sending OpenAI request "
             f"attempt {attempt}/"
             f"{MAX_AI_ATTEMPTS}"
         )
@@ -1675,12 +1708,11 @@ def generate_ai_content(
         try:
 
             response = (
-    openai_client
-    .chat
-    .completions
-    .create(
-
-        model=OPENAI_MODEL,
+                openai_client
+                .chat
+                .completions
+                .create(
+                    model=OPENAI_MODEL,
 
                     messages=[
                         {
@@ -1716,7 +1748,7 @@ def generate_ai_content(
             )
 
             print(
-                f"Groq finish reason: "
+                f"OpenAI finish reason: "
                 f"{finish_reason}"
             )
 
@@ -1730,13 +1762,13 @@ def generate_ai_content(
                 )
 
             # =================================================
-            # EMPTY
+            # EMPTY RESPONSE
             # =================================================
 
             if not raw_content:
 
                 print(
-                    "ERROR Groq returned empty content."
+                    "ERROR OpenAI returned empty content."
                 )
 
                 return None
@@ -1751,7 +1783,7 @@ def generate_ai_content(
             ):
 
                 print(
-                    "WARNING Groq response "
+                    "WARNING OpenAI response "
                     "reached completion token limit."
                 )
 
@@ -1825,7 +1857,7 @@ def generate_ai_content(
             error_text = str(e)
 
             print(
-                f"ERROR Groq request failed: "
+                f"ERROR OpenAI request failed: "
                 f"{error_text}"
             )
 
@@ -1838,7 +1870,7 @@ def generate_ai_content(
             ):
 
                 print(
-                    "ERROR Groq TPM rate limit reached."
+                    "ERROR OpenAI rate limit reached."
                 )
 
                 print(
@@ -1856,7 +1888,7 @@ def generate_ai_content(
             ):
 
                 print(
-                    "ERROR Groq prompt too large."
+                    "ERROR OpenAI prompt too large."
                 )
 
                 return None
@@ -1868,6 +1900,7 @@ def generate_ai_content(
             return None
 
     return None
+
 
 # ============================================================
 # TELEGRAM API
@@ -1882,6 +1915,7 @@ def telegram_api_url(
         f"bot{TELEGRAM_BOT_TOKEN}/"
         f"{method}"
     )
+
 
 # ============================================================
 # TELEGRAM NEWS FORMAT
@@ -1964,6 +1998,7 @@ def build_telegram_news(
         + safe_url
     )
 
+
 # ============================================================
 # TELEGRAM PLAIN NEWS FORMAT
 # ============================================================
@@ -2023,6 +2058,7 @@ def build_telegram_plain_text(
         "👉 Klik untuk baca berita penuh\n"
         + source_url
     )
+
 
 # ============================================================
 # SEND TELEGRAM PHOTO
@@ -2090,6 +2126,7 @@ def send_telegram_photo(
 
         return False
 
+
 # ============================================================
 # SEND TELEGRAM TEXT
 # ============================================================
@@ -2147,6 +2184,7 @@ def send_telegram_text(
         )
 
         return False
+
 
 # ============================================================
 # MAIN
@@ -2362,6 +2400,7 @@ def main():
     print(
         "=" * 60
     )
+
 
 # ============================================================
 # ENTRY

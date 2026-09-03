@@ -98,16 +98,14 @@ TELEGRAM_CHAT_ID = os.getenv(
 # GROQ CLIENT
 # ============================================================
 
-groq_client = None
+openai_client = None
 
-if GROQ_API_KEY:
+if OPENAI_API_KEY:
 
-    groq_client = OpenAI(
-        api_key=GROQ_API_KEY,
-        base_url=GROQ_BASE_URL,
+    openai_client = OpenAI(
+        api_key=OPENAI_API_KEY,
         max_retries=0
     )
-
 # ============================================================
 # BASIC HELPERS
 # ============================================================
@@ -378,11 +376,11 @@ def check_config():
             "GNEWS_API_KEY"
         )
 
-    if not GROQ_API_KEY:
+   if not OPENAI_API_KEY:
 
-        missing.append(
-            "GROQ_API_KEY"
-        )
+    missing.append(
+        "OPENAI_API_KEY"
+    )
 
     if not TELEGRAM_BOT_TOKEN:
 
@@ -1570,11 +1568,11 @@ def generate_ai_content(
     terms_data
 ):
 
-    if groq_client is None:
-
-        print(
-            "ERROR Groq client not initialized."
-        )
+if openai_client is None:
+    
+       print(
+    "ERROR OpenAI client not initialized."
+)
 
         return None
 
@@ -1671,12 +1669,12 @@ def generate_ai_content(
         try:
 
             response = (
-                groq_client
-                .chat
-                .completions
-                .create(
+    openai_client
+    .chat
+    .completions
+    .create(
 
-                    model=GROQ_MODEL,
+        model=OPENAI_MODEL,
 
                     messages=[
                         {

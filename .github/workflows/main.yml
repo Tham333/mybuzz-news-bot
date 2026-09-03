@@ -41,7 +41,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install beautifulsoup4
 
 
       # ============================================================
@@ -51,7 +50,7 @@ jobs:
       - name: Run MYBUZZ News Bot
         env:
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
@@ -68,8 +67,8 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "ERROR: GROQ_API_KEY is missing."
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "ERROR: OPENAI_API_KEY is missing."
             exit 1
           fi
 
@@ -144,6 +143,7 @@ jobs:
         if: always()
         env:
           CLOUDFLARE_WORKER_URL: ${{ secrets.CLOUDFLARE_WORKER_URL }}
+
         run: |
 
           echo "======================================"
@@ -155,7 +155,6 @@ jobs:
             exit 0
           fi
 
-          # 获取运行状态
           if [ "${{ job.status }}" == "success" ]; then
             STATUS="success"
           else
@@ -164,7 +163,6 @@ jobs:
 
           echo "Job status: $STATUS"
 
-          # 发送通知到 Cloudflare Worker
           curl -X POST "$CLOUDFLARE_WORKER_URL" \
             -H "Content-Type: application/json" \
             -d "{\"status\":\"$STATUS\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"workflow\":\"main.yml\"}" \

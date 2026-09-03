@@ -376,11 +376,11 @@ def check_config():
             "GNEWS_API_KEY"
         )
 
-   if not OPENAI_API_KEY:
+       if not OPENAI_API_KEY:
 
-    missing.append(
-        "OPENAI_API_KEY"
-    )
+        missing.append(
+            "OPENAI_API_KEY"
+        )
 
     if not TELEGRAM_BOT_TOKEN:
 
@@ -1568,7 +1568,13 @@ def generate_ai_content(
     terms_data
 ):
 
-if openai_client is None:
+    if openai_client is None:
+
+        print(
+            "ERROR OpenAI client not initialized."
+        )
+
+        return None
     
        print(
     "ERROR OpenAI client not initialized."

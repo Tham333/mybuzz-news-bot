@@ -80,7 +80,7 @@ GNEWS_API_KEY = os.getenv(
 ).strip()
 
 GROQ_API_KEY = os.getenv(
-    "GROQ_API_KEY",
+    "OPENAI_API_KEY",
     ""
 ).strip()
 

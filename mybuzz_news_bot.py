@@ -1708,34 +1708,32 @@ def generate_ai_content(
         try:
 
             response = (
-                openai_client
-                .chat
-                .completions
-                .create(
-                    model=OPENAI_MODEL,
+    openai_client
+    .chat
+    .completions
+    .create(
+        model=OPENAI_MODEL,
 
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
 
-                    temperature=0.1,
+        max_completion_tokens=(
+            AI_MAX_COMPLETION_TOKENS
+        ),
 
-                    max_completion_tokens=(
-                        AI_MAX_COMPLETION_TOKENS
-                    ),
+        reasoning_effort=(
+            AI_REASONING_EFFORT
+        ),
 
-                    reasoning_effort=(
-                        AI_REASONING_EFFORT
-                    ),
-
-                    response_format={
-                        "type": "json_object"
-                    }
-                )
-            )
+        response_format={
+            "type": "json_object"
+        }
+    )
+)
 
             choice = (
                 response.choices[0]
